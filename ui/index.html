@@ -1,0 +1,194 @@
+<!doctype html>
+<!--
+  data-theme="dark" is deliberate rather than following the OS. This window shows
+  image previews, and judging a render against a light surround is bad practice;
+  theme.css supports the explicit override for exactly this case.
+-->
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>EXR → sRGB</title>
+    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body autocomplete="off">
+    <div class="app">
+      <header class="titlebar">
+        <h1>EXR → sRGB</h1>
+        <span class="sub">ACES linear → display-ready PNG / JPEG</span>
+        <span class="spacer"></span>
+        <span class="sub" id="version"></span>
+        <button
+          class="icon"
+          id="btn-theme"
+          title="Toggle light / dark"
+          aria-label="Toggle light or dark theme"
+        >
+          <svg class="i-moon" width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path
+              d="M12.5 9.4A5.6 5.6 0 0 1 5.6 2.5a5.6 5.6 0 1 0 6.9 6.9Z"
+              stroke="currentColor"
+              stroke-width="1.2"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <svg class="i-sun" width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <circle cx="7.5" cy="7.5" r="3" stroke="currentColor" stroke-width="1.2" />
+            <path
+              d="M7.5 1v1.6M7.5 12.4V14M14 7.5h-1.6M2.6 7.5H1M12.1 12.1l-1.1-1.1M4 4L2.9 2.9M12.1 2.9 11 4M4 11l-1.1 1.1"
+              stroke="currentColor"
+              stroke-width="1.2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </header>
+
+      <div class="main">
+        <!-- left column: files + settings -->
+        <div class="col">
+          <section class="panel" id="files-panel">
+            <div class="panel-head">
+              <span class="panel-title">Files</span>
+              <span class="spacer"></span>
+              <button id="btn-add-files">Add files</button>
+              <button id="btn-add-folder">Add folder</button>
+              <button class="ghost" id="btn-clear">Clear</button>
+            </div>
+            <div class="filelist" id="filelist"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <span class="panel-title">Output settings</span>
+            </div>
+            <div class="settings wide">
+              <div class="field span2">
+                <label class="lbl" for="config">OCIO configuration</label>
+                <select autocomplete="off" id="config"></select>
+              </div>
+              <div class="field">
+                <label class="lbl" for="input-cs">Input color space</label>
+                <select autocomplete="off" id="input-cs"></select>
+              </div>
+              <div class="field">
+                <label class="lbl" for="display">Output display</label>
+                <select autocomplete="off" id="display"></select>
+              </div>
+
+              <div class="field">
+                <label class="lbl" for="look">Look</label>
+                <select autocomplete="off" id="look">
+                  <option value="tone">Tone-mapped (viewport)</option>
+                  <option value="plain">Un-tone-mapped</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="lbl" for="format">Format</label>
+                <select autocomplete="off" id="format">
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="lbl" for="bits">Bit depth</label>
+                <select autocomplete="off" id="bits">
+                  <option value="8">8-bit</option>
+                  <option value="16">16-bit</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="lbl" for="quality">JPEG quality</label>
+                <select autocomplete="off" id="quality">
+                  <option>100</option>
+                  <option selected>95</option>
+                  <option>90</option>
+                  <option>85</option>
+                  <option>80</option>
+                  <option>70</option>
+                </select>
+              </div>
+
+              <div class="field span2">
+                <label class="lbl" for="layer">Layer</label>
+                <select autocomplete="off" id="layer"></select>
+              </div>
+              <div class="field">
+                <label class="lbl" for="alpha">Alpha</label>
+                <select autocomplete="off" id="alpha">
+                  <option value="keep">Keep alpha (RGBA)</option>
+                  <option value="black">Flatten on black</option>
+                  <option value="white">Flatten on white</option>
+                </select>
+              </div>
+              <div class="field" style="justify-content: flex-end; gap: 7px">
+                <label class="check">
+                  <input autocomplete="off" type="checkbox" id="unpremult" checked />
+                  <span class="box"></span>
+                  <span>Un-premultiply</span>
+                </label>
+                <label class="check">
+                  <input autocomplete="off" type="checkbox" id="suffix" />
+                  <span class="box"></span>
+                  <span>Add “_srgb”</span>
+                </label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- right column: preview -->
+        <div class="col">
+          <section class="panel" id="preview-panel">
+            <div class="panel-head">
+              <span class="panel-title">Preview</span>
+              <span class="spacer"></span>
+              <button class="ghost" id="btn-refresh" title="Refresh preview">
+                ↻
+              </button>
+            </div>
+            <div class="preview-box" id="preview-box">
+              <div class="placeholder">Add a file to preview the conversion</div>
+            </div>
+            <div class="preview-meta">
+              <span class="layer" id="preview-layer"></span>
+              <span id="preview-dims"></span>
+              <span id="preview-note" class="warn"></span>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <footer class="footer">
+        <div class="outrow">
+          <span class="lbl">Output</span>
+          <input
+            type="text"
+            autocomplete="off"
+            id="outdir"
+            placeholder="Same folder as each source"
+          />
+          <button id="btn-outdir">Browse</button>
+          <button class="ghost" id="btn-outdir-clear">Same as source</button>
+        </div>
+
+        <div class="actions">
+          <button class="primary" id="btn-convert">Convert</button>
+          <button id="btn-cancel" disabled>Cancel</button>
+          <span class="spacer"></span>
+          <span class="status" id="status">Ready</span>
+        </div>
+
+        <div class="progress" id="progress"><div class="bar" id="bar"></div></div>
+        <div class="log" id="log"></div>
+      </footer>
+    </div>
+
+    <!--
+      Plain scripts, not modules: the UI is loaded from a file:// URL, whose
+      opaque origin makes ES module imports fail CORS. select.js must come first.
+    -->
+    <script src="select.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

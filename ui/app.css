@@ -1,0 +1,892 @@
+/*
+ * EXR -> sRGB application styles.
+ *
+ * Everything here references the semantic tokens from theme.css (--panel,
+ * --ink, --accent...) rather than raw hex, so re-theming stays a one-file edit.
+ * Motion uses that file's --ease-ui / --ease-out and nothing longer than
+ * 220ms: this is a tool, and animation here exists to explain state changes,
+ * not to decorate them.
+ */
+
+/* --------------------------------------------------------------------------
+ * App-level tokens that theme.css does not define. Same three-block structure
+ * it uses, so the two can never drift: light in :root, dark under the explicit
+ * attribute or the OS default, light restored when the OS says light.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  --checker-a: var(--warm-100);
+  --checker-b: var(--warm-50);
+  --log-bg: var(--warm-50);
+}
+
+:root[data-theme='dark'],
+:root:not([data-theme='light']) {
+  --checker-a: var(--warm-800);
+  --checker-b: var(--warm-850);
+  --log-bg: var(--warm-950);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --checker-a: var(--warm-100);
+    --checker-b: var(--warm-50);
+    --log-bg: var(--warm-50);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--panel-sunken);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+/* Nothing in a desktop tool should show a text caret unless it is editable. */
+input,
+textarea {
+  user-select: text;
+}
+
+/* --------------------------------------------------------------------------
+ * Shell
+ * ------------------------------------------------------------------------ */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+}
+
+.titlebar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-sunken);
+}
+
+.titlebar h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.titlebar .sub {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.titlebar .spacer {
+  flex: 1;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  padding: 18px 22px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Panels
+ * ------------------------------------------------------------------------ */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.panel-head .spacer {
+  flex: 1;
+}
+
+/* --------------------------------------------------------------------------
+ * Buttons
+ * ------------------------------------------------------------------------ */
+
+button {
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  background: var(--panel-sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition:
+    background var(--duration-ui) var(--ease-ui),
+    border-color var(--duration-ui) var(--ease-ui),
+    color var(--duration-ui) var(--ease-ui),
+    transform var(--duration-ui) var(--ease-ui);
+}
+
+button:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+
+/* Pressable elements confirm the interface heard the user. Same scale and
+   easing as the VISOR invoice app, so the two tools feel related. */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.primary {
+  background: var(--primary);
+  color: var(--primary-ink);
+  border-color: transparent;
+  font-weight: 600;
+  padding: 9px 22px;
+  font-size: 13px;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: transparent;
+  color: var(--primary-ink);
+  filter: brightness(1.06);
+}
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-faint);
+}
+
+/* Icon-only square button, used for the theme toggle and preview refresh. */
+button.icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-faint);
+}
+
+button.icon:hover:not(:disabled) {
+  background: var(--panel);
+  color: var(--ink);
+  border-color: transparent;
+}
+
+/* The sun and moon occupy the same cell and cross-fade, so the control does
+   not jump when the label changes. */
+#btn-theme svg {
+  grid-area: 1 / 1;
+  transition:
+    opacity 180ms var(--ease-ui),
+    transform 220ms var(--ease-out);
+}
+
+#btn-theme .i-sun {
+  opacity: 0;
+  transform: rotate(-70deg) scale(0.6);
+}
+
+#btn-theme .i-moon {
+  opacity: 1;
+  transform: none;
+}
+
+:root[data-theme='light'] #btn-theme .i-sun {
+  opacity: 1;
+  transform: none;
+}
+
+:root[data-theme='light'] #btn-theme .i-moon {
+  opacity: 0;
+  transform: rotate(70deg) scale(0.6);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--panel-sunken);
+  color: var(--ink);
+  border-color: transparent;
+}
+
+/* --------------------------------------------------------------------------
+ * File list + drop zone
+ * ------------------------------------------------------------------------ */
+
+#files-panel {
+  flex: 1;
+  position: relative;
+  transition:
+    border-color 180ms var(--ease-out),
+    background 180ms var(--ease-out);
+}
+
+#files-panel.dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.filelist {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  min-height: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-ui) var(--ease-ui);
+  animation: row-in 180ms var(--ease-out) both;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.row:hover {
+  background: var(--panel-sunken);
+}
+
+.row.selected {
+  background: var(--accent-soft);
+}
+
+.row .name {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.row.selected .name,
+.row:hover .name {
+  color: var(--ink);
+}
+
+.badge {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-faint);
+}
+
+.badge.seq {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.row .drop-x {
+  flex: none;
+  opacity: 0;
+  padding: 2px 6px;
+  font-size: 14px;
+  line-height: 1;
+  transition: opacity var(--duration-ui) var(--ease-ui);
+}
+
+.row:hover .drop-x {
+  opacity: 1;
+}
+
+.empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--ink-faint);
+  text-align: center;
+  padding: 24px;
+}
+
+.empty .big {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.empty .small {
+  font-size: 11.5px;
+}
+
+/* --------------------------------------------------------------------------
+ * Preview
+ * ------------------------------------------------------------------------ */
+
+#preview-panel {
+  flex: none;
+}
+
+.preview-box {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background:
+    /* checkerboard, so alpha is legible rather than guessed at */
+    repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%)
+      50% / 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.preview-box img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  animation: fade-in 220ms var(--ease-out) both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.preview-box .placeholder {
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  padding: 0 20px;
+  text-align: center;
+}
+
+.preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  min-height: 58px;
+}
+
+.preview-meta .layer {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Settings
+ * ------------------------------------------------------------------------ */
+
+.settings {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.settings.wide {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field.span2 {
+  grid-column: span 2;
+}
+
+label.lbl {
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.01em;
+}
+
+input[type='text'] {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel-sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  width: 100%;
+  min-width: 0;
+  transition:
+    border-color var(--duration-ui) var(--ease-ui),
+    background var(--duration-ui) var(--ease-ui);
+  cursor: text;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+input[type='text']:hover {
+  border-color: var(--ink-faint);
+}
+
+input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+ * Select
+ *
+ * The real <select> stays in the DOM as the source of truth and is hidden;
+ * select.js builds the trigger and panel around it. Timings and easing are
+ * lifted from the VISOR invoice app's Radix select so the two match.
+ * ------------------------------------------------------------------------ */
+
+.select-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  clip: rect(0 0 0 0);
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-sunken);
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 160ms var(--ease-out),
+    border-color 150ms var(--ease-ui),
+    background-color 150ms var(--ease-ui);
+}
+
+.select-trigger:hover:not(:disabled) {
+  border-color: var(--ink-faint);
+  background: var(--panel-sunken);
+  color: var(--ink);
+}
+
+.select-trigger:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.select-trigger[data-state='open'] {
+  border-color: var(--accent);
+}
+
+.select-trigger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-chevron {
+  flex: none;
+  color: var(--ink-faint);
+  transition: transform 150ms var(--ease-ui);
+}
+
+.select-trigger[data-state='open'] .select-chevron {
+  transform: rotate(180deg);
+}
+
+.select-panel {
+  position: fixed;
+  z-index: 60;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-float);
+  /* transform-origin is set in JS to the edge the panel opened from, so it
+     grows out of its trigger rather than from its own centre. */
+}
+
+.select-panel[data-state='open'] {
+  animation: select-in 140ms var(--ease-ui);
+}
+
+.select-panel[data-state='closed'] {
+  animation: select-out 100ms var(--ease-ui) forwards;
+}
+
+@keyframes select-in {
+  from {
+    opacity: 0;
+    /* 95%, never 0 — things should appear from something, not nothing. */
+    transform: scale(0.95) translateY(-2px);
+  }
+}
+
+@keyframes select-out {
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(-2px);
+  }
+}
+
+.select-viewport {
+  padding: 4px;
+  max-height: inherit;
+  overflow-y: auto;
+}
+
+.select-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 28px 5px 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background-color 150ms var(--ease-ui);
+}
+
+/* Pointer and keyboard drive the same attribute, so the hover state cannot
+   disagree with the focused one. */
+.select-item[data-highlighted] {
+  background: var(--panel-sunken);
+}
+
+.select-item[data-state='checked'] {
+  font-weight: 600;
+}
+
+.select-item__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-item__check {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  margin-top: -6px;
+  color: var(--accent);
+  animation: check-pop 160ms var(--ease-out);
+}
+
+@keyframes check-pop {
+  from {
+    opacity: 0.5;
+    transform: scale(0.55);
+  }
+}
+
+/* Custom checkbox: the native one cannot be themed, and a tool with a dozen
+   toggles reads badly when half of them are OS-blue. */
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 12px;
+  transition: color var(--duration-ui) var(--ease-ui);
+  padding: 2px 0;
+}
+
+.check:hover {
+  color: var(--ink);
+}
+
+.check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.check .box {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-sunken);
+  display: grid;
+  place-items: center;
+  transition:
+    background var(--duration-ui) var(--ease-ui),
+    border-color var(--duration-ui) var(--ease-ui);
+}
+
+.check .box::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--primary-ink);
+  transform: scale(0);
+  transition: transform 160ms var(--ease-out);
+}
+
+.check input:checked + .box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.check input:checked + .box::after {
+  transform: scale(1);
+}
+
+.check input:focus-visible + .box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+ * Footer: output, action bar, log
+ * ------------------------------------------------------------------------ */
+
+.footer {
+  border-top: 1px solid var(--line);
+  background: var(--panel-sunken);
+  padding: 12px 22px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.outrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.outrow .lbl {
+  flex: none;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.actions .spacer {
+  flex: 1;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress {
+  height: 3px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress .bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 220ms var(--ease-out);
+}
+
+.progress.done .bar {
+  background: var(--data-positive);
+}
+
+.progress.failed .bar {
+  background: var(--danger);
+}
+
+.log {
+  height: 108px;
+  overflow-y: auto;
+  background: var(--log-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--ink-faint);
+  user-select: text;
+}
+
+.log div {
+  animation: fade-in 140ms var(--ease-ui) both;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log .ok {
+  color: var(--data-positive);
+}
+.log .err {
+  color: var(--danger);
+}
+.log .warn {
+  color: var(--warn);
+}
+.log .dim {
+  color: var(--ink-faint);
+  opacity: 0.75;
+}
+
+/* --------------------------------------------------------------------------
+ * Scrollbars
+ * ------------------------------------------------------------------------ */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+  background-clip: content-box;
+}
+
+/* Respect the OS setting. Motion here is informative, so removing it costs
+   nothing but confusion for anyone who asked for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Scale and rotation read as motion even at zero duration, so drop them
+     outright rather than just shortening them. */
+  button:active:not(:disabled),
+  .select-trigger:active:not(:disabled) {
+    transform: none;
+  }
+
+  .select-trigger[data-state='open'] .select-chevron {
+    transform: none;
+  }
+}

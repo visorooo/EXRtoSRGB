@@ -3,12 +3,21 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
 
-# PyInstaller output — the .exe ships on GitHub Releases, not in the repo
-# (the one-file EXRtoPNG build is ~35 MB and bundles the OIIO/OCIO DLLs)
+# Build output. The .exe ships as a GitHub Release asset, never in the repo —
+# it is ~37 MB and bundles the OIIO/OCIO DLLs. build_exe.bat writes it to the
+# repo root so it is easy to find; PyInstaller's scratch goes to %TEMP%.
+/EXRtoSRGB.exe
 build/
 dist/
 *.manifest
+
+# Test fixtures: real renders plus their Nuke conversions, several hundred MB —
+# far too big for git. Keep them locally under exrs_tests/; tests/ skips the
+# reference comparisons when the folder is absent, so a fresh clone still runs
+# the rest of the suite.
+exrs_tests/
 
 # OS / editor
 desktop.ini
