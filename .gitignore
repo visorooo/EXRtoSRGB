@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# PyInstaller output — the .exe ships on GitHub Releases, not in the repo
+# (the one-file EXRtoPNG build is ~35 MB and bundles the OIIO/OCIO DLLs)
+build/
+dist/
+*.manifest
+
+# OS / editor
+desktop.ini
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
