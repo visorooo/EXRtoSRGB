@@ -1,8 +1,9 @@
-# EXR → sRGB  ·  ACES linear → PNG / JPEG
+# EXR → sRGB  ·  ACES linear → PNG / JPEG / TIFF
 
 A small batch converter so you don't have to round-trip through After Effects to
-turn ACES-linear EXR renders into display-ready PNGs or JPEGs. Works on output
-from Blender Cycles, C4D Octane and C4D Redshift.
+turn ACES-linear EXR renders into display-ready PNGs, JPEGs or TIFFs. Works on
+output from Blender Cycles, C4D Octane and C4D Redshift. It can also write
+**scene-linear 32-bit TIFF** when the destination is a comp rather than a screen.
 
 The color is done with **OpenColorIO's built-in ACES configs** — the same engine
 your renderers use — so the output matches your viewport instead of a naive gamma
@@ -104,9 +105,20 @@ video.
   viewport. Default.
 - *Un-tone-mapped* — gamut + transfer only, no filmic rolloff. Use if your viewport
   is set to a "standard"/raw view.
+- *Scene-linear (no transform)* — see below. Not a look at all, but the third
+  mutually exclusive answer to "what happens to these pixels".
 
-**Format** — **PNG** or **JPEG**. JPEG is 8-bit and has no alpha, so picking it locks
-bit depth to 8 and flattens; the quality dropdown only applies to JPEG.
+**Format** — **PNG**, **JPEG**, or **TIFF**. What each can carry:
+
+| | Bit depths | Alpha |
+|---|---|---|
+| PNG | 8, 16 | yes |
+| JPEG | 8 | no — flattens |
+| TIFF | 8, 16, **32-bit float** | yes |
+
+The controls follow the container rather than accepting a setting and ignoring it:
+picking JPEG locks bit depth to 8, and 32-bit is offered only for TIFF, because
+32-bit means *float* and neither PNG nor JPEG has a float format.
 
 **Alpha**
 - *Keep alpha (RGBA)* — default, PNG only. JPEG flattens on black instead.
@@ -119,10 +131,41 @@ background. The alpha is re-applied afterwards, so the file you get is
 premultiplied — matching Nuke, and what every compositor expects. Turn it off only
 if your EXR already carries straight alpha.
 
-**Bit depth** — **16-bit by default**, or 8-bit. 16-bit RGBA PNG is fully supported
-and is the safer default for anything heading back into a comp, since it keeps the
+**Bit depth** — **16-bit by default**, or 8-bit, or 32-bit float on TIFF. 16-bit is
+the safer default for anything heading back into a comp, since it keeps the
 gradients intact after the display transform. Drop to 8-bit for delivery. JPEG is
 always 8-bit.
+
+---
+
+## Scene-linear output
+
+Everything above produces a *picture*: the ACES transform is applied and the result
+is display-referred. **Scene-linear** does the opposite — it writes the render's
+original linear values with **no display transform at all**.
+
+Use it when the destination is another piece of software rather than an eye: a
+comp, a grade, a plate hand-off. Use the display modes when the destination is a
+screen.
+
+Picking it constrains everything else, because those constraints are real:
+
+- **Output is 32-bit float TIFF.** Linear values run past 1.0 and cluster near
+  zero; an 8- or 16-bit integer container would clip and band away exactly what the
+  mode exists to preserve. TIFF is the only format here with a float mode.
+- **Input colour space and output display grey out.** Nothing is being converted,
+  so they have nothing to act on.
+- **Un-premultiply is ignored.** The pixels are passed through untouched — that is
+  the guarantee, and it is asserted bit-for-bit in the test suite.
+- **The suffix becomes `_linear`**, and the file is tagged `colorspace=Linear`.
+  Naming a linear render `_srgb` is how it ends up with a transfer function applied
+  twice downstream.
+- **The preview stays display-referred** and says so. Showing raw linear values
+  would be a near-black smear, so the preview remains a framing and layer check
+  rather than a colour one.
+
+What you get back is bit-identical to the source layer, in a container more tools
+will open than EXR.
 
 **Output** — same folder as each source by default, or pick one folder. The
 **`_srgb` suffix is on by default**, so converting in place never sits a `.png`

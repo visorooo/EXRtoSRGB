@@ -25,13 +25,14 @@ function settings() {
     src: $('input-cs').value,
     display: $('display').value,
     tone: $('look').value === 'tone',
+    transfer: $('look').value === 'linear' ? 'linear' : 'display',
     format: $('format').value,
     quality: parseInt($('quality').value, 10),
     bits: parseInt($('bits').value, 10),
     alpha_mode: $('alpha').value,
     layer: $('layer').value,
     unpremult: $('unpremult').checked,
-    suffix: $('suffix').checked ? '_srgb' : '',
+    suffix: $('suffix').checked ? suffixFor() : '',
     out_dir: $('outdir').value.trim(),
   };
 }
@@ -46,13 +47,53 @@ function setValue(el, value) {
   if (el._select) el._select.sync();
 }
 
-/* JPEG carries neither 16-bit nor alpha; say so in the controls rather than
-   silently ignoring the values. */
+/*
+ * The suffix has to describe what is in the file. Naming a scene-linear render
+ * "_srgb" is the same mistake as tagging it sRGB in the header: something
+ * downstream applies a transfer function that was never there.
+ */
+function suffixFor() {
+  return $('look').value === 'linear' ? '_linear' : '_srgb';
+}
+
+/*
+ * Reflect what each container can actually carry, rather than accepting a
+ * setting and quietly ignoring it. core.resolve_output() enforces the same
+ * rules on the Python side - this only keeps the controls honest.
+ *
+ *   JPEG   - 8-bit, no alpha
+ *   PNG    - 8 or 16-bit integer, no float
+ *   TIFF   - 8, 16 or 32-bit float
+ *   linear - float only, so TIFF 32-bit, and the display settings stop meaning
+ *            anything because no display transform runs
+ */
 function syncFormat() {
-  const jpeg = $('format').value === 'jpeg';
+  const linear = $('look').value === 'linear';
+  if (linear) {
+    setValue($('format'), 'tiff');
+    setValue($('bits'), '32');
+  }
+
+  const fmt = $('format').value;
+  const jpeg = fmt === 'jpeg';
+
   $('quality').disabled = !jpeg;
-  $('bits').disabled = jpeg;
+  $('format').disabled = linear;
+  $('bits').disabled = jpeg || linear;
+
+  // 32-bit is float, and only TIFF has float here
+  const bit32 = $('bits').querySelector('option[value="32"]');
+  if (bit32) bit32.disabled = fmt !== 'tiff';
   if (jpeg) setValue($('bits'), '8');
+  else if (fmt !== 'tiff' && $('bits').value === '32') setValue($('bits'), '16');
+
+  // Nothing is being transformed, so the colour controls are inert
+  $('input-cs').disabled = linear;
+  $('display').disabled = linear;
+  $('alpha').disabled = false;
+
+  $('linear-note').hidden = !linear;
+  $('suffix-label').textContent = 'Add “' + suffixFor() + '”';
 }
 
 function fillSelect(el, values, current) {
@@ -402,7 +443,13 @@ function wire() {
     syncFormat();
     schedulePreview();
   };
-  for (const id of ['input-cs', 'display', 'look', 'alpha', 'layer', 'bits',
+  // 'look' shares the format handler: picking scene-linear has to pull the
+  // container and bit depth along with it.
+  $('look').onchange = () => {
+    syncFormat();
+    schedulePreview();
+  };
+  for (const id of ['input-cs', 'display', 'alpha', 'layer', 'bits',
                     'quality', 'unpremult']) {
     $(id).onchange = schedulePreview;
   }

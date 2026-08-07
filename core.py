@@ -293,7 +293,15 @@ def apply_transform(rgb, alpha, W, H, settings):
     afterwards is what keeps the file associated, which is how every compositor
     reads PNG edge pixels. Breaking either half puts a bright fringe on every
     antialiased edge.
+
+    With transfer="linear" none of that happens: the pixels are handed back
+    exactly as they came off disk. No OCIO, no alpha juggling, and crucially no
+    clamp, so values above 1.0 survive. That is the whole point of the mode - it
+    exists to move scene-referred data, not to make a picture.
     """
+    if settings.get("transfer") == "linear":
+        return rgb, alpha
+
     unpremulted = False
     if alpha is not None and settings["unpremult"]:
         mask = alpha > 1e-6
@@ -318,23 +326,40 @@ def apply_transform(rgb, alpha, W, H, settings):
     return buf, a
 
 
-def compose(buf, a, alpha_mode, force_flat=False):
-    """Apply the alpha mode. Returns (float array, nchannels)."""
+def compose(buf, a, alpha_mode, force_flat=False, clamp=True):
+    """
+    Apply the alpha mode. Returns (float array, nchannels).
+
+    `clamp` is off for scene-linear output, where compositing over white still
+    means adding (1 - a) but the result must be allowed past 1.0 like every other
+    value in the frame.
+    """
     if a is None:
         return buf, 3
     if alpha_mode == "white":
-        return np.clip(buf + (1.0 - a[..., None]), 0.0, 1.0), 3
+        out = buf + (1.0 - a[..., None])
+        return (np.clip(out, 0.0, 1.0) if clamp else out), 3
     if alpha_mode == "black" or force_flat:
         # buf is associated, so compositing over black is just dropping alpha
         return buf, 3
     return np.dstack([buf, a]), 4
 
 
-def write_image(path, arr_uint, W, H, nchannels, fmt, quality=95):
+def write_image(path, arr_uint, W, H, nchannels, fmt, quality=95,
+                colorspace="sRGB"):
     spec = oiio.ImageSpec(W, H, nchannels, fmt)
-    spec.attribute("oiio:ColorSpace", "sRGB")
+    # Tags what is actually in the file. A scene-linear TIFF labelled sRGB would
+    # be read back with a transfer function applied that was never there.
+    spec.attribute("oiio:ColorSpace", colorspace)
     if path.lower().endswith((".jpg", ".jpeg")):
         spec.attribute("CompressionQuality", int(quality))
+    if path.lower().endswith((".tif", ".tiff")):
+        # zip beat lzw and packbits on real frames, and is lossless either way.
+        spec.attribute("compression", "zip")
+        # TIFF can only express sRGB (via the EXIF ColorSpace tag); "Linear" has
+        # no representation and OIIO silently drops it. Absence of a tag is a
+        # weak signal, so state it in ImageDescription, which always survives.
+        spec.attribute("ImageDescription", "colorspace=%s" % colorspace)
     out = oiio.ImageOutput.create(path)
     if out is None:
         raise IOError("Could not create writer for %s: %s" % (path, oiio.geterror()))
@@ -347,11 +372,39 @@ def write_image(path, arr_uint, W, H, nchannels, fmt, quality=95):
     out.close()
 
 
+EXTENSIONS = {"png": ".png", "jpeg": ".jpg", "tiff": ".tif"}
+
+
 def output_path_for(in_path, settings):
     out_dir = settings.get("out_dir") or os.path.dirname(in_path)
     base = os.path.splitext(os.path.basename(in_path))[0]
-    ext = ".jpg" if settings["format"] == "jpeg" else ".png"
+    ext = EXTENSIONS.get(settings["format"], ".png")
     return os.path.join(out_dir, base + settings.get("suffix", "") + ext)
+
+
+def resolve_output(settings):
+    """
+    Work out the real pixel format, given what the container can carry.
+
+    Kept separate from convert_one so the UI can ask the same question without
+    converting anything, and so the constraints live in one place rather than
+    being re-derived in JavaScript.
+    """
+    fmt = settings["format"]
+    linear = settings.get("transfer") == "linear"
+    bits = int(settings.get("bits", 8))
+
+    if linear:
+        # Scene-linear needs float, and only TIFF carries float here. Anything
+        # else would quantise or clip the values the mode exists to preserve.
+        return "tiff", "float", 32
+    if fmt == "jpeg":
+        return "jpeg", "uint8", 8
+    if bits == 32:
+        # 32-bit is float-only, and PNG has no float. Fall back rather than
+        # writing something the container cannot represent.
+        return ("tiff", "float", 32) if fmt == "tiff" else (fmt, "uint16", 16)
+    return fmt, ("uint16" if bits == 16 else "uint8"), bits
 
 
 def convert_one(in_path, settings):
@@ -359,19 +412,22 @@ def convert_one(in_path, settings):
     rgb, alpha, W, H, layer, note = read_layer(in_path, settings.get("layer"))
     buf, a = apply_transform(rgb, alpha, W, H, settings)
 
-    is_jpeg = settings["format"] == "jpeg"
-    out_f, nch = compose(buf, a, settings["alpha_mode"], force_flat=is_jpeg)
+    fmt, pix_fmt, bits = resolve_output(settings)
+    linear = settings.get("transfer") == "linear"
+    out_f, nch = compose(buf, a, settings["alpha_mode"],
+                         force_flat=(fmt == "jpeg"), clamp=not linear)
 
-    if settings["bits"] == 16 and not is_jpeg:
-        arr_uint = (out_f * 65535.0 + 0.5).astype(np.uint16)
-        pix_fmt = "uint16"
+    if pix_fmt == "float":
+        arr_out = np.ascontiguousarray(out_f, dtype=np.float32)
+    elif pix_fmt == "uint16":
+        arr_out = (np.clip(out_f, 0.0, 1.0) * 65535.0 + 0.5).astype(np.uint16)
     else:
-        arr_uint = (out_f * 255.0 + 0.5).astype(np.uint8)
-        pix_fmt = "uint8"
+        arr_out = (np.clip(out_f, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
 
-    out_path = output_path_for(in_path, settings)
+    out_path = output_path_for(in_path, dict(settings, format=fmt))
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    write_image(out_path, arr_uint, W, H, nch, pix_fmt, settings.get("quality", 95))
+    write_image(out_path, arr_out, W, H, nch, pix_fmt, settings.get("quality", 95),
+                colorspace=("Linear" if linear else "sRGB"))
     return out_path, {"layer": layer, "note": note, "width": W, "height": H}
 
 
@@ -397,8 +453,16 @@ def make_thumbnail(path, settings, max_px=512):
     Returns (data-uri str, info dict). Downsampling happens in linear before the
     display transform, so the preview is a true preview - same layer, same
     transform, same alpha handling as the real output.
+
+    The exception is scene-linear output, which has no display transform by
+    definition. Showing those values raw would be a near-black smear, so the
+    preview stays display-referred and reports `preview_only=True`; it is then
+    the UI's job to say the preview is not what gets written.
     """
     rgb, alpha, W, H, layer, note = read_layer(path, settings.get("layer"))
+    linear = settings.get("transfer") == "linear"
+    if linear:
+        settings = dict(settings, transfer="display")
 
     # ceil, not floor: 1920 // 256 is 7, which leaves a 274px thumbnail above
     # the cap the caller asked for
@@ -429,7 +493,8 @@ def make_thumbnail(path, settings, max_px=512):
             pass
 
     uri = "data:image/png;base64," + base64.b64encode(data).decode("ascii")
-    return uri, {"layer": layer, "note": note, "width": W, "height": H}
+    return uri, {"layer": layer, "note": note, "width": W, "height": H,
+                 "preview_only": linear}
 
 
 # ----------------------------------------------------------------------------

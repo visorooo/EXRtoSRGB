@@ -178,6 +178,7 @@ class Api:
             "alpha_mode": s["alpha_mode"],
             "layer": None if s["layer"] == core.LAYER_AUTO else s["layer"],
             "unpremult": bool(s["unpremult"]),
+            "transfer": s.get("transfer", "display"),
             "out_dir": s["out_dir"] or None,
             "suffix": s["suffix"],
         }
@@ -324,9 +325,17 @@ class Api:
 
         files = list(self.files)
         self.cancel_flag.clear()
-        self._js("onLog", "%s · %s · %s"
-                 % (core.describe_config(settings["config"]),
-                    settings["view"], settings["format"].upper()), "dim")
+        # Report the format actually resolved, not the one requested - they
+        # differ whenever the container cannot carry the requested depth.
+        fmt, pix_fmt, bits = core.resolve_output(settings)
+        if settings.get("transfer") == "linear":
+            head = "scene-linear (no display transform) · %s %d-bit float" % (
+                fmt.upper(), bits)
+        else:
+            head = "%s · %s · %s %d-bit" % (
+                core.describe_config(settings["config"]), settings["view"],
+                fmt.upper(), bits)
+        self._js("onLog", head, "dim")
         self.worker = threading.Thread(target=self._run, args=(files, settings),
                                        daemon=True)
         self.worker.start()

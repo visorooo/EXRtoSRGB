@@ -35,7 +35,7 @@
           />
         </svg>
         <h1>EXR → sRGB</h1>
-        <span class="sub">ACES linear → display-ready PNG / JPEG</span>
+        <span class="sub">ACES linear → PNG / JPEG / TIFF</span>
         <span class="spacer"></span>
         <span class="sub" id="version"></span>
         <button
@@ -101,6 +101,7 @@
                 <select autocomplete="off" id="look">
                   <option value="tone">Tone-mapped (viewport)</option>
                   <option value="plain">Un-tone-mapped</option>
+                  <option value="linear">Scene-linear (no transform)</option>
                 </select>
               </div>
               <div class="field">
@@ -108,6 +109,7 @@
                 <select autocomplete="off" id="format">
                   <option value="png">PNG</option>
                   <option value="jpeg">JPEG</option>
+                  <option value="tiff">TIFF</option>
                 </select>
               </div>
               <div class="field">
@@ -115,6 +117,7 @@
                 <select autocomplete="off" id="bits">
                   <option value="8">8-bit</option>
                   <option value="16">16-bit</option>
+                  <option value="32">32-bit float</option>
                 </select>
               </div>
               <div class="field">
@@ -150,7 +153,8 @@
                 <label class="check">
                   <input autocomplete="off" type="checkbox" id="suffix" />
                   <span class="box"></span>
-                  <span>Add “_srgb”</span>
+                  <!-- text follows the output mode; see suffixFor() in app.js -->
+                  <span id="suffix-label">Add “_srgb”</span>
                 </label>
               </div>
             </div>
@@ -174,6 +178,14 @@
               <span class="layer" id="preview-layer"></span>
               <span id="preview-dims"></span>
               <span id="preview-note" class="warn"></span>
+              <!--
+                Scene-linear output has no display transform by definition, so
+                the preview cannot be what gets written. Saying so beats showing
+                a near-black smear or quietly misleading.
+              -->
+              <span id="linear-note" class="warn" hidden
+                >Preview is display-referred · output is scene-linear</span
+              >
             </div>
           </section>
         </div>

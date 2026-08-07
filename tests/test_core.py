@@ -49,6 +49,7 @@ def settings(out_dir, config=ACES13, **kw):
         "alpha_mode": "keep",
         "layer": None,
         "unpremult": True,
+        "transfer": "display",
         "out_dir": str(out_dir),
         "suffix": "",
     }
@@ -249,6 +250,145 @@ def test_jpeg_ignores_16bit(tmp_path):
     src_in = oiio.ImageInput.open(out)
     assert str(src_in.spec().format) == "uint8"
     src_in.close()
+
+
+# ---------------------------------------------------------------------------
+# TIFF and scene-linear output
+# ---------------------------------------------------------------------------
+
+def _hdr_exr(path):
+    """One pixel per value, including values well above 1.0."""
+    arr = np.zeros((1, 4, 4), dtype=np.float32)
+    for i, v in enumerate((0.18, 1.0, 4.0, 12.5)):
+        arr[0, i, :3] = v
+        arr[0, i, 3] = 1.0
+    out = oiio.ImageOutput.create(path)
+    out.open(path, oiio.ImageSpec(4, 1, 4, "float"))
+    out.write_image(arr)
+    out.close()
+    return path
+
+
+@pytest.mark.parametrize("fmt,bits,ext,pixfmt", [
+    ("tiff", 8, ".tif", "uint8"),
+    ("tiff", 16, ".tif", "uint16"),
+    ("tiff", 32, ".tif", "float"),
+    ("png", 8, ".png", "uint8"),
+    ("png", 16, ".png", "uint16"),
+])
+def test_format_and_depth(tmp_path, fmt, bits, ext, pixfmt):
+    src = _synthetic_alpha_exr(str(tmp_path / "a.exr"))
+    out, _ = core.convert_one(src, settings(
+        tmp_path, format=fmt, bits=bits, suffix="_%s%d" % (fmt, bits)))
+    assert out.endswith(ext)
+    i = oiio.ImageInput.open(out)
+    assert str(i.spec().format) == pixfmt
+    i.close()
+
+
+def test_png_cannot_hold_32bit(tmp_path):
+    """PNG has no float, so asking for 32-bit must degrade, not corrupt."""
+    src = _synthetic_alpha_exr(str(tmp_path / "a.exr"))
+    fmt, pixfmt, bits = core.resolve_output(
+        settings(tmp_path, format="png", bits=32))
+    assert (fmt, pixfmt, bits) == ("png", "uint16", 16)
+
+
+def test_linear_forces_float_tiff(tmp_path):
+    """Scene-linear is meaningless in an 8-bit container; it must upgrade."""
+    for fmt, bits in (("png", 8), ("jpeg", 8), ("tiff", 16)):
+        assert core.resolve_output(settings(
+            tmp_path, format=fmt, bits=bits, transfer="linear")) \
+            == ("tiff", "float", 32)
+
+
+def test_linear_output_is_bit_exact(tmp_path):
+    """
+    The whole point of scene-linear: pixels come back exactly as they went in.
+
+    No display transform, no clamp, no alpha juggling. A single altered bit here
+    means the mode is not doing what it claims.
+    """
+    src = _hdr_exr(str(tmp_path / "hdr.exr"))
+    out, _ = core.convert_one(src, settings(
+        tmp_path, transfer="linear", format="tiff", bits=32, alpha_mode="keep"))
+    assert out.endswith(".tif")
+
+    i = oiio.ImageInput.open(src)
+    a = np.array(i.read_image(format="float"), dtype=np.float32); i.close()
+    j = oiio.ImageInput.open(out)
+    b = np.array(j.read_image(format="float"), dtype=np.float32)
+    assert str(j.spec().format) == "float"
+    j.close()
+    assert np.array_equal(a.ravel(), b.ravel()), "linear output was altered"
+
+
+def test_linear_preserves_values_above_one(tmp_path):
+    src = _hdr_exr(str(tmp_path / "hdr.exr"))
+    out, _ = core.convert_one(src, settings(
+        tmp_path, transfer="linear", format="tiff", bits=32))
+    i = oiio.ImageInput.open(out)
+    px = np.array(i.read_image(format="float"), dtype=np.float32).reshape(1, 4, 4)
+    i.close()
+    assert px[0, 3, 0] == pytest.approx(12.5), "highlight was clamped"
+    assert px[0, 2, 0] == pytest.approx(4.0)
+
+
+def test_display_output_is_clamped(tmp_path):
+    """The display path must still clamp - only linear is allowed past 1.0."""
+    src = _hdr_exr(str(tmp_path / "hdr.exr"))
+    out, _ = core.convert_one(src, settings(
+        tmp_path, transfer="display", format="tiff", bits=32))
+    i = oiio.ImageInput.open(out)
+    px = np.array(i.read_image(format="float"), dtype=np.float32)
+    i.close()
+    assert px.max() <= 1.0
+
+
+def test_linear_ignores_unpremultiply(tmp_path):
+    """Linear is a passthrough; the alpha toggle must not change the pixels."""
+    src = _synthetic_alpha_exr(str(tmp_path / "half.exr"), cov=0.5)
+    a, _ = core.convert_one(src, settings(
+        tmp_path, transfer="linear", unpremult=True, suffix="_on"))
+    b, _ = core.convert_one(src, settings(
+        tmp_path, transfer="linear", unpremult=False, suffix="_off"))
+    ia = oiio.ImageInput.open(a); pa = np.array(ia.read_image(format="float")); ia.close()
+    ib = oiio.ImageInput.open(b); pb = np.array(ib.read_image(format="float")); ib.close()
+    assert np.array_equal(pa, pb)
+
+
+def test_linear_tags_colorspace(tmp_path):
+    """
+    A linear file labelled sRGB would get a transfer function applied twice
+    downstream. TIFF can only express sRGB natively - "Linear" has no tag and
+    OIIO drops it - so the description carries it and must not be lost.
+    """
+    src = _hdr_exr(str(tmp_path / "hdr.exr"))
+    lin, _ = core.convert_one(src, settings(tmp_path, transfer="linear", suffix="_l"))
+    dis, _ = core.convert_one(src, settings(tmp_path, format="tiff", suffix="_d"))
+
+    def attrs(path):
+        i = oiio.ImageInput.open(path)
+        a = {x.name: x.value for x in i.spec().extra_attribs}
+        i.close()
+        return a
+
+    la, da = attrs(lin), attrs(dis)
+    assert la["ImageDescription"] == "colorspace=Linear"
+    assert da["ImageDescription"] == "colorspace=sRGB"
+    # the display file additionally carries a real sRGB tag; the linear must not
+    assert "sRGB" not in str(la.get("oiio:ColorSpace", ""))
+    assert "srgb" in str(da.get("oiio:ColorSpace", "")).lower()
+
+
+def test_preview_stays_display_referred(tmp_path):
+    """Raw linear values would render as a near-black smear."""
+    src = _hdr_exr(str(tmp_path / "hdr.exr"))
+    uri, info = core.make_thumbnail(src, settings(tmp_path, transfer="linear"))
+    assert info["preview_only"] is True
+    uri2, info2 = core.make_thumbnail(src, settings(tmp_path, transfer="display"))
+    assert info2["preview_only"] is False
+    assert uri == uri2, "preview should be identical regardless of output mode"
 
 
 # ---------------------------------------------------------------------------

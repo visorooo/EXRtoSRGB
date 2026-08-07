@@ -1,6 +1,6 @@
 # Roadmap
 
-Where this tool is and where it goes next. Last updated 2026-08-06.
+Where this tool is and where it goes next. Last updated 2026-08-07.
 
 ---
 
@@ -94,6 +94,29 @@ conditions that must all hold, and why a real drop cannot be simulated in a test
 
 ---
 
+## Shipped — v2.1 (V3 in progress)
+
+**TIFF output, and scene-linear.** TIFF writes at 8, 16 and 32-bit float. More
+interesting is the third entry now in the Look dropdown: **scene-linear**, which
+applies no display transform at all and hands back the render's original values.
+
+The two are one feature because 32-bit only earns its place if it carries linear
+data — nobody needs 32 bits to hold 0–1. So picking scene-linear pulls the
+container and depth along with it, greys out the colour controls that no longer
+act on anything, and switches the suffix to `_linear`.
+
+Naming and tagging turned out to matter as much as the pixels. TIFF can only
+express sRGB natively, and OIIO *silently drops* an unrecognised "Linear", so the
+colourspace also goes in `ImageDescription`, which survives. A linear file named
+`_srgb` or tagged sRGB gets a transfer function applied twice downstream — the
+same class of bug as the two v1.0 ones, caught this time before shipping.
+
+The guarantee is bit-exactness, and it is asserted rather than asserted-at:
+converting to scene-linear TIFF and reading back gives pixels identical to the
+source layer, values above 1.0 included.
+
+---
+
 ## V3
 
 ### 1. EXR viewer *(the interesting one)*
@@ -165,36 +188,13 @@ producing silent garbage. Also expect several types per file (`CryptoObject`,
 `CryptoMaterial`, `CryptoAsset`), and manifests that live in a sidecar file via
 `manifest_file` instead of inline.
 
-### 3. TIFF export, including 32-bit *(small — the format work is trivial)*
-
-**Feasible, and verified.** OIIO writes TIFF at 8-bit, 16-bit and 32-bit float, in
-both RGB and RGBA, and a 32-bit round-trip is bit-exact including values above 1.0.
-Compression works — `zip` beat `lzw` and `packbits` in a quick check. Note that
-`half` is silently promoted to `float`: TIFF has no half format.
-
-Adding `.tif` to the format dropdown is an afternoon. The question worth settling
-first is **what 32-bit is for**, because the two answers want different behaviour:
-
-- *Display-referred float* — the ACES transform applied, values in 0–1, just stored
-  at 32-bit. Consistent with everything else the tool does, but nobody needs 32
-  bits to hold 0–1.
-- *Scene-linear passthrough* — no display transform, original linear values kept.
-  This is almost certainly the real reason to want 32-bit, and it turns the tool
-  into an EXR→TIFF linear converter for plate and DI delivery.
-
-The second is more useful and is a genuine behaviour change, not a format toggle,
-so it should be an explicit "linear (no display transform)" choice rather than
-something inferred from picking 32-bit. Worth pairing with 16-bit half-float TIFF
-being unavailable, so the honest options are 8/16-bit integer display-referred, or
-32-bit float linear.
-
-### 4. Parallel conversion *(medium)*
+### 3. Parallel conversion *(medium)*
 
 One worker thread today. OIIO and OCIO both release the GIL, so a `ThreadPool` over
 frames should scale close to linearly — which matters most for the sequences now
 that a 240-frame render is one click.
 
-### 5. Smaller things
+### 4. Smaller things
 
 - **Per-file layer override.** The dropdown applies one choice to the batch, falling
   back to auto-detect per file. Mixed batches would benefit from remembering a
@@ -220,5 +220,3 @@ that a 240-frame render is one click.
 - Conversion is single-threaded.
 - Cryptomatte layers are correctly *excluded* from beauty auto-detection, but are
   not otherwise understood — no picking, no matte export. See V3 item 2.
-- Output is PNG or JPEG only. No TIFF, and no way to write scene-linear data: every
-  path applies a display transform. See V3 item 3.

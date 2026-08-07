@@ -54,7 +54,11 @@ tested without opening a window.
 - **I/O** — `read_layer` (reads only the channels the chosen layer needs),
   `write_image`.
 - **`apply_transform` / `compose`** — the transform and the alpha modes, split out
-  so `convert_one` and `make_thumbnail` cannot drift apart.
+  so `convert_one` and `make_thumbnail` cannot drift apart. `transfer="linear"`
+  makes `apply_transform` a passthrough: no OCIO, no alpha juggling, **no clamp**.
+- **`resolve_output`** — the single place that decides the real container and
+  pixel format. The UI mirrors these rules in `syncFormat()` but does not own
+  them, so a settings blob from anywhere still gets checked.
 - **`convert_one(path, settings)`** — returns `(out_path, info)`; `info` carries
   the layer used and any warning.
 - **`group_sequences`** — collapses `name.0001.exr` runs into one entry.
@@ -168,6 +172,25 @@ beside its `.exr` with the same stem. All four live in `applyDefaults()` in
 **ACES 1.2 is not an OCIO built-in.** It predates the built-in registry and exists
 only as a downloadable `config.ocio`, so it cannot be compiled in. That is what the
 `Custom config.ocio…` entry is for; don't try to add ACES 1.2 to `ACES_CONFIGS`.
+
+## Scene-linear output
+
+`transfer="linear"` is a different job from everything else here: it moves data
+rather than making a picture. Three things it must never do — all asserted in
+`tests/test_core.py`:
+
+- **Clamp.** Linear values run past 1.0 and that is the point. Only the display
+  path clips.
+- **Touch alpha.** Un-premultiply is skipped entirely, so the toggle has no effect
+  and the output is bit-identical to the source layer.
+- **Claim to be sRGB.** The file is tagged `colorspace=Linear` and named `_linear`.
+  TIFF can only express sRGB natively — via the EXIF ColorSpace tag — and OIIO
+  silently *drops* an unrecognised "Linear", so it also goes in `ImageDescription`,
+  which always survives. A linear file labelled sRGB gets a transfer function
+  applied twice downstream, which is the same class of bug as the two below.
+
+The preview stays display-referred in this mode (raw linear renders as a near-black
+smear) and returns `preview_only=True` so the UI can say so.
 
 ## Two invariants that have already been violated once
 
