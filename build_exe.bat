@@ -1,21 +1,22 @@
 @echo off
 REM ============================================================
-REM  Build EXRtoPNG.exe  (run this on Windows, in this folder)
+REM  Build EXRtoSRGB.exe  (run this on Windows, in this folder)
+REM
+REM  The exe lands next to this script rather than in dist\, so
+REM  it is the first thing you see in the folder.
 REM ============================================================
 
 REM 1) install dependencies
 python -m pip install --upgrade pip
-python -m pip install OpenImageIO OpenColorIO pyinstaller
+python -m pip install OpenImageIO OpenColorIO pywebview pyinstaller
 
-REM 2) build a single-file windowed exe
-REM    Use "python -m PyInstaller" so it works even when the
-REM    pyinstaller command isn't on your PATH.
-REM    --collect-all pulls in the OIIO / OCIO binary DLLs.
-python -m PyInstaller --onefile --windowed --name "EXRtoPNG" ^
-  --collect-all OpenImageIO ^
-  --collect-all PyOpenColorIO ^
-  exr2png.py
+REM 2) build from the saved spec
+REM    The spec carries the parts that are easy to get wrong: the OIIO/OCIO
+REM    DLLs, the ui\ folder (which IS the interface), and the pywebview
+REM    WebView2 backend. Prefer it over a bare command line.
+REM    --workpath keeps PyInstaller's scratch out of the repo root.
+python -m PyInstaller --noconfirm --distpath . --workpath "%TEMP%\EXRtoSRGB-build" EXRtoSRGB.spec
 
 echo.
-echo Done. Your exe is in the  dist\  folder:  dist\EXRtoPNG.exe
+echo Done.  EXRtoSRGB.exe is in this folder.
 pause

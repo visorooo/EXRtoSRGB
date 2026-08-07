@@ -1,0 +1,184 @@
+/*
+ * VISOR warm-neutral theme
+ * ============================================================================
+ *
+ * A warm-grey palette — everything is nudged toward yellow/brown rather than
+ * the blue-tinted greys most UI kits default to. That single decision is what
+ * gives it its character; the rest is ordinary.
+ *
+ * Values were read off the VISOR Hub (hub.visor.ooo). Its dark scale is
+ * reproduced verbatim; the light scale is the same hue family walked the other
+ * way, so the two themes read as one system rather than two palettes.
+ *
+ * ---------------------------------------------------------------------------
+ * HOW TO USE
+ *
+ *   1. Copy this file into your project and import it before your own CSS.
+ *   2. Keep ONE of the two mappings at the bottom and delete the other:
+ *        · Section 4 — Tailwind v4 (`@theme`)
+ *        · Section 5 — shadcn/ui (`--background`, `--foreground`, …)
+ *      Section 3's semantic names work on their own if you use neither.
+ *   3. Dark mode follows the OS by default. Set `data-theme="light"` or
+ *      `data-theme="dark"` on <html> to override it.
+ *
+ * Pairs with Inter (https://rsms.me/inter). Nothing here depends on it.
+ * ============================================================================
+ */
+
+/* --------------------------------------------------------------------------
+ * 1. Primitives — the raw scale. Nothing should reference these directly in
+ *    application code; use the semantic names in section 3 instead, so a
+ *    palette change stays a one-file edit.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  --warm-0: #ffffff;
+  --warm-50: #f5f4f1;
+  --warm-100: #e6e4df;
+  --warm-200: #d6d3cc;
+  --warm-400: #8c8a83;
+  --warm-450: #a5a4a0;
+  --warm-500: #78766f;
+  --warm-600: #56554f;
+  --warm-700: #3a3a38;
+  --warm-750: #302f2d;
+  --warm-800: #2a2926;
+  --warm-820: #242322;
+  --warm-850: #201f1e;
+  --warm-870: #1c1c1b;
+  --warm-900: #191917;
+  --warm-950: #131312;
+
+  /* Accents. Each has a light and a dark variant because a hue that reads as
+     an accent on white is rarely legible on near-black. */
+  --blue-600: #286088;
+  --blue-300: #7fb2d9;
+  --blue-tint: #eaf1f7;
+  --blue-shade: #1e2a33;
+
+  --amber-700: #8a6318;
+  --amber-400: #e0a458;
+  --amber-tint: #fdf6e7;
+  --amber-shade: #2b2415;
+
+  --red-600: #dc2626;
+  --red-400: #fb7185;
+  --red-tint: #fdf2f2;
+  --red-shade: #33201f;
+
+  /* Data colours, for charts and figures that carry a sign. */
+  --data-positive: #34d399;
+  --data-negative: #fb7185;
+  --data-caution: #e0a458;
+  --data-healthy: #a3d25a;
+}
+
+/* --------------------------------------------------------------------------
+ * 2. Shape, type and motion. Theme-independent.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  --radius: 0.5rem;
+  --radius-sm: 0.375rem;
+  --radius-lg: 0.75rem;
+
+  --font-sans: 'Inter Variable', Inter, system-ui, -apple-system, ui-sans-serif,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+
+  /* The workhorse: short, and slightly eased at both ends. Use it for almost
+     everything — hover, colour, small position shifts. */
+  --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-ui: 150ms;
+
+  /* For entrances, where a decisive start reads better than a symmetric one. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* --------------------------------------------------------------------------
+ * 3. Semantic tokens — what application code should actually reference.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  --panel: var(--warm-0);
+  --panel-sunken: var(--warm-50);
+  --line: var(--warm-100);
+  --line-strong: var(--warm-200);
+  --ink: var(--warm-900);
+  --ink-soft: var(--warm-600);
+  --ink-faint: var(--warm-400);
+
+  --accent: var(--blue-600);
+  --accent-soft: var(--blue-tint);
+  --warn: var(--amber-700);
+  --warn-soft: var(--amber-tint);
+  --danger: var(--red-600);
+  --danger-soft: var(--red-tint);
+
+  /* Inverted pair for solid buttons, so they stay legible in both themes
+     without a second rule. */
+  --primary: var(--warm-900);
+  --primary-ink: var(--warm-50);
+
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.16), 0 12px 40px -12px rgb(0 0 0 / 0.45);
+
+  color-scheme: light;
+}
+
+/* The dark values, applied either explicitly or by OS preference. Kept as one
+   list so the two triggers can never drift apart. */
+:root[data-theme='dark'],
+:root:not([data-theme='light']) {
+  --panel: var(--warm-850);
+  --panel-sunken: var(--warm-820);
+  --line: var(--warm-750);
+  --line-strong: var(--warm-700);
+  --ink: var(--warm-50);
+  --ink-soft: var(--warm-450);
+  --ink-faint: var(--warm-500);
+
+  --accent: var(--blue-300);
+  --accent-soft: var(--blue-shade);
+  --warn: var(--amber-400);
+  --warn-soft: var(--amber-shade);
+  --danger: var(--red-400);
+  --danger-soft: var(--red-shade);
+
+  --primary: var(--warm-50);
+  --primary-ink: var(--warm-900);
+
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.5), 0 16px 48px -12px rgb(0 0 0 / 0.7);
+
+  color-scheme: dark;
+}
+
+/* `:not([data-theme='light'])` above would otherwise apply in light mode too,
+   so the light values are restored whenever the OS is not dark. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --panel: var(--warm-0);
+    --panel-sunken: var(--warm-50);
+    --line: var(--warm-100);
+    --line-strong: var(--warm-200);
+    --ink: var(--warm-900);
+    --ink-soft: var(--warm-600);
+    --ink-faint: var(--warm-400);
+
+    --accent: var(--blue-600);
+    --accent-soft: var(--blue-tint);
+    --warn: var(--amber-700);
+    --warn-soft: var(--amber-tint);
+    --danger: var(--red-600);
+    --danger-soft: var(--red-tint);
+
+    --primary: var(--warm-900);
+    --primary-ink: var(--warm-50);
+
+    --shadow-float: 0 1px 2px rgb(0 0 0 / 0.16),
+      0 12px 40px -12px rgb(0 0 0 / 0.45);
+
+    color-scheme: light;
+  }
+}
