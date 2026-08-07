@@ -2,12 +2,14 @@
 
 Batch converter: ACES-linear EXR → display-ready PNG/JPEG, using OpenColorIO's
 built-in ACES configs so the result matches the renderer's viewport rather than a
-gamma guess. Public on `visorooo/EXRtoPNG`, MIT. The README is the user
+gamma guess. Public on `visorooo/EXRtoSRGB`, MIT. The README is the user
 documentation; `ROADMAP.md` tracks what's next and why.
 
-The app, module and exe are all named **EXR → sRGB** as of v2.0. **The repo is
-still `EXRtoPNG`** — renaming needs the visorooo account, since `gabe-xyz` is a
-collaborator without admin rights.
+App, module, exe and repo are all named **EXR → sRGB** as of v2.0. The repo was
+renamed from `EXRtoPNG` on 2026-08-07; GitHub redirects the old URL, so old clones
+and links still resolve. Anything that needs settings, visibility or collaborator
+changes still requires the **visorooo** account — `gabe-xyz` has push but not
+admin.
 
 ## Shape of the code
 
@@ -172,6 +174,9 @@ partial-alpha pixels, which is easy to mistake for a broken alpha channel. The
 
 `EXRtoSRGB.exe` (~37.6 MB) ships as a GitHub Release asset and is gitignored.
 `build_exe.bat` writes it to the **repo root** rather than `dist/`, so the folder
-shows the app; PyInstaller's scratch goes to `%TEMP%`. `dist/EXRtoPNG.exe`
-(35.7 MB) is the superseded v1.0.0 asset, kept locally for re-upload — safe to
-delete, since it is already published on Releases. Never commit either binary.
+shows the app; PyInstaller's scratch goes to `%TEMP%`.
+
+`dist/EXRtoPNG.exe` (35.7 MB) is the superseded v1.0.0 asset, kept locally for
+re-upload — safe to delete, since it is already published on Releases. Its name
+is deliberately *not* updated: it is the old tkinter binary and `EXRtoPNG.exe` is
+what that release actually shipped. Never commit either binary.

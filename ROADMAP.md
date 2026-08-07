@@ -59,7 +59,11 @@ preview and the full conversion agree.
 **Sequence detection.** `shot_010_beauty.0001.exr … .0240.exr` collapses to one row
 reading `shot_010_beauty.####.exr · 240 frames · 1–240`.
 
-**Renamed** to EXR → sRGB throughout: module, window, exe, spec, docs.
+**Renamed** to EXR → sRGB throughout: module, window, exe, spec, docs — and the
+repo itself, `visorooo/EXRtoPNG` → `visorooo/EXRtoSRGB`, on 2026-08-07. GitHub
+redirects the old URL, so old clones and shared links still resolve. The v1.0.0
+release asset stays `EXRtoPNG.exe`, which is correct: it *is* the old tkinter
+binary.
 
 **Light / dark toggle.** `theme.css` always carried a full light scale; the app now
 uses it. The choice persists in `%LOCALAPPDATA%\EXRtoSRGB\prefs.json` rather than
@@ -125,24 +129,13 @@ way), or move the transform to the GPU via OCIO's GPU path and a WebGL canvas
 Worth splitting into its own repo if it grows past a single window; the two tools
 share `core.py` and little else.
 
-### 2. Repo rename *(blocked — needs the visorooo account)*
-
-`visorooo/EXRtoPNG` → `visorooo/EXRtoSRGB`. Attempted from `gabe-xyz` and refused:
-the API reports `"admin": false, "maintain": false`, and `PATCH /repos/...` returns
-404 (GitHub masks permission denials on write endpoints). Renaming requires admin.
-
-From the **visorooo** account: *Settings → General → Repository name* → `EXRtoSRGB`
-→ Rename. GitHub redirects the old URL and existing clones keep working, so nothing
-breaks; afterwards run `git remote set-url origin` locally. The v1.0.0 release asset
-keeps its old filename, which is correct — it *is* the old binary.
-
-### 3. Parallel conversion *(medium)*
+### 2. Parallel conversion *(medium)*
 
 One worker thread today. OIIO and OCIO both release the GIL, so a `ThreadPool` over
 frames should scale close to linearly — which matters most for the sequences now
 that a 240-frame render is one click.
 
-### 4. Smaller things
+### 3. Smaller things
 
 - **Per-file layer override.** The dropdown applies one choice to the batch, falling
   back to auto-detect per file. Mixed batches would benefit from remembering a
