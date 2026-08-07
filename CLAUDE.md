@@ -32,9 +32,14 @@ tests/test_core.py
 so it is exact at any size. Brand blue is **`#1f20f1`**, taken from the artwork
 itself. `app.ico` puts a warm-50 mark on a blue rounded square rather than the
 reverse: at 16px in a taskbar, blue-on-near-black collapses into an unreadable
-blob. In the UI the mark is inline SVG using `currentColor`, driven by
-`--visor-blue`, which the dark scale lifts to `#5455ff` because the true brand
-blue is nearly invisible against near-black.
+blob (1.99:1 against 7.53:1 inverted).
+
+In the UI the mark is inline SVG using `currentColor`. Two tokens, deliberately
+separate: **`--visor-blue`** is the brand and never varies by theme, while
+**`--brand-mark`** is what the mark is drawn in — brand blue on light, **pure
+white on dark**. Brand blue on the dark surface is 1.9:1, and lifting the hue far
+enough to be legible stops reading as the brand colour anyway, so the mark goes
+monochrome rather than approximate.
 
 The split is the point: anything touching pixels goes in `core.py` so it can be
 tested without opening a window.
