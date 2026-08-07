@@ -15,6 +15,7 @@ admin.
 
 ```
 EXRtoSRGB.exe     the build, written to the repo root so it is easy to find.
+app.ico           VISOR mark, multi-size. wired into the spec and the window.
 core.py           conversion. no UI imports. this is what the tests exercise.
 exr2srgb.py       pywebview window + the Api bridge exposed to JavaScript.
 ui/theme.css      VISOR warm-neutral palette, verbatim from invoice-app.
@@ -22,8 +23,18 @@ ui/app.css        application styles, built only on theme.css tokens.
 ui/index.html     markup.
 ui/app.js         front end. gathers settings, renders state. no pixel work.
 ui/select.js      custom dropdown, matching invoice-app's Radix select.
+ui/visor-mark.svg the mark on its own, for anywhere it is needed standalone.
 tests/test_core.py
 ```
+
+**Branding.** The mark's geometry is lifted from the vector paths in
+`visor.logo-principal.pdf` (VISOR brand drive → Logo), not traced from a bitmap,
+so it is exact at any size. Brand blue is **`#1f20f1`**, taken from the artwork
+itself. `app.ico` puts a warm-50 mark on a blue rounded square rather than the
+reverse: at 16px in a taskbar, blue-on-near-black collapses into an unreadable
+blob. In the UI the mark is inline SVG using `currentColor`, driven by
+`--visor-blue`, which the dark scale lifts to `#5455ff` because the true brand
+blue is nearly invisible against near-black.
 
 The split is the point: anything touching pixels goes in `core.py` so it can be
 tested without opening a window.
@@ -141,9 +152,13 @@ resolved to a plain transfer function instead of the tone-mapped one.
 conversions of the same frames; mean 8-bit error is 1.09 / 0.13 / 0.05 and the
 tests assert those bounds.
 
-Two defaults are deliberate and easy to break by accident: **ACES 1.3 CG v2.2**,
+Four defaults are deliberate. Two are colour-critical: **ACES 1.3 CG v2.2**,
 because Blender/Octane/Redshift ACES setups are still on 1.x, and **un-premultiply
-on**, because renders write associated alpha.
+on**, because renders write associated alpha. Two are workflow choices made in
+v2.0.1: **16-bit**, which keeps gradients intact for anything going back into a
+comp, and **`_srgb` suffix on**, so an in-place convert never leaves a `.png`
+beside its `.exr` with the same stem. All four live in `applyDefaults()` in
+`ui/app.js` — not in the markup, for the WebView2 reason above.
 
 **ACES 1.2 is not an OCIO built-in.** It predates the built-in registry and exists
 only as a downloadable `config.ocio`, so it cannot be compiled in. That is what the

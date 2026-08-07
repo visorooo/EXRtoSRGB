@@ -16,7 +16,7 @@ alongside the exe.
 """
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ui', 'ui')]
+datas = [('ui', 'ui'), ('app.ico', '.')]
 binaries = []
 hiddenimports = ['webview.platforms.winforms', 'clr_loader']
 
@@ -49,6 +49,7 @@ exe = EXE(
     a.datas,
     [],
     name='EXRtoSRGB',
+    icon='app.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

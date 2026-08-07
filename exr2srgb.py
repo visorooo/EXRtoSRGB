@@ -31,8 +31,9 @@ import core
 APP_NAME = "EXR → sRGB"
 VERSION = "2.0"
 
-UI_DIR = os.path.join(
-    getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "ui")
+# _MEIPASS only exists in a frozen build; from source this is the repo folder.
+BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+UI_DIR = os.path.join(BASE_DIR, "ui")
 
 
 def _js_str(s):
@@ -435,7 +436,12 @@ def main():
     )
     api._window = window
     window.events.loaded += lambda: attach_dnd(window, api)
-    webview.start(debug=bool(os.environ.get("EXR2SRGB_DEBUG")), private_mode=False)
+    # On Windows the taskbar icon comes from the exe (spec: icon='app.ico');
+    # this is what gives a source run the same mark instead of a Python one.
+    icon = os.path.join(BASE_DIR, "app.ico")
+    kwargs = {"icon": icon} if os.path.exists(icon) else {}
+    webview.start(debug=bool(os.environ.get("EXR2SRGB_DEBUG")),
+                  private_mode=False, **kwargs)
 
 
 if __name__ == "__main__":

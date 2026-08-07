@@ -119,11 +119,15 @@ background. The alpha is re-applied afterwards, so the file you get is
 premultiplied — matching Nuke, and what every compositor expects. Turn it off only
 if your EXR already carries straight alpha.
 
-**Bit depth** — 8-bit (default) or 16-bit. 16-bit RGBA PNG is fully supported. JPEG
-is always 8-bit.
+**Bit depth** — **16-bit by default**, or 8-bit. 16-bit RGBA PNG is fully supported
+and is the safer default for anything heading back into a comp, since it keeps the
+gradients intact after the display transform. Drop to 8-bit for delivery. JPEG is
+always 8-bit.
 
-**Output** — same folder as each source by default, or pick one folder. Optional
-`_srgb` suffix so you don't overwrite anything.
+**Output** — same folder as each source by default, or pick one folder. The
+**`_srgb` suffix is on by default**, so converting in place never sits a `.png`
+next to its `.exr` with the same stem and no way to tell which came from where.
+Turn it off if your naming is already handled downstream.
 
 **Light / dark** — the sun/moon button in the top right. The choice is remembered
 in `%LOCALAPPDATA%\EXRtoSRGB\prefs.json`. Dark is the default and the better choice

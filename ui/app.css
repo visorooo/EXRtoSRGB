@@ -18,6 +18,11 @@
   --checker-a: var(--warm-100);
   --checker-b: var(--warm-50);
   --log-bg: var(--warm-50);
+
+  /* VISOR brand blue, straight off the logo artwork. Kept as its own token
+     rather than folded into --accent: the accent is a UI colour that may be
+     retuned, this one is the brand. */
+  --visor-blue: #1f20f1;
 }
 
 :root[data-theme='dark'],
@@ -25,6 +30,11 @@
   --checker-a: var(--warm-800);
   --checker-b: var(--warm-850);
   --log-bg: var(--warm-950);
+
+  /* #1f20f1 is nearly invisible against near-black, so the dark scale lifts it
+     while holding the hue - the same reasoning theme.css gives for its own
+     accents. */
+  --visor-blue: #5455ff;
 }
 
 @media (prefers-color-scheme: light) {
@@ -32,6 +42,7 @@
     --checker-a: var(--warm-100);
     --checker-b: var(--warm-50);
     --log-bg: var(--warm-50);
+    --visor-blue: #1f20f1;
   }
 }
 
@@ -82,6 +93,16 @@ textarea {
   padding: 18px 22px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--panel-sunken);
+}
+
+/* The mark sits with the wordmark, sized to the cap height of the title rather
+   than to the line box, so the two optically align. */
+.titlebar .brand {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  align-self: center;
+  color: var(--visor-blue);
 }
 
 .titlebar h1 {

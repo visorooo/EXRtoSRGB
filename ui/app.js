@@ -447,11 +447,11 @@ function setTheme(theme) {
 function applyDefaults() {
   setValue($('look'), 'tone');
   setValue($('format'), 'png');
-  setValue($('bits'), '8');
+  setValue($('bits'), '16');
   setValue($('quality'), '95');
   setValue($('alpha'), 'keep');
   $('unpremult').checked = true;
-  $('suffix').checked = false;
+  $('suffix').checked = true;
   $('outdir').value = '';
 }
 
