@@ -129,13 +129,72 @@ way), or move the transform to the GPU via OCIO's GPU path and a WebGL canvas
 Worth splitting into its own repo if it grows past a single window; the two tools
 share `core.py` and little else.
 
-### 2. Parallel conversion *(medium)*
+### 2. Cryptomatte picking and matte export *(large — depends on the viewer)*
+
+**Feasible, and verified.** A synthetic spec-compliant cryptomatte was written and
+read back: the metadata parsed, picking a pixel resolved to the right object name,
+and coverage extraction handled a mixed edge pixel correctly. The proof that it is
+right is that every matte in the image summed to exactly 1.0 per pixel.
+
+Cryptomatte stores the manifest in EXR metadata — `cryptomatte/<id>/name`, `/hash`,
+`/conversion`, `/manifest` — where the manifest is JSON mapping object names to
+MurmurHash3_32 values. The channels come in pairs: `CryptoObject00.R` is an ID and
+`.G` its coverage, `.B`/`.A` the next rank, continuing into `CryptoObject01`. To
+extract a matte you sum coverage across every rank where the ID matches.
+`MurmurHash3_32` and the spec's `uint32_to_float32` conversion (with its exponent
+clamp) both have to be implemented exactly, or IDs will not match.
+
+Three things decide whether this is good or merely working:
+
+- **Mattes must not go through the display transform.** Coverage is data, not
+  colour. Running it through an ACES view would be as wrong as converting a normal
+  pass. This bypasses `apply_transform` entirely — the same lesson as
+  `_DATA_LAYER_TOKENS`.
+- **"Flat white with alpha" needs defining.** RGB 1.0 with coverage in alpha is the
+  obvious reading, but that file is *unassociated*, which contradicts the rule the
+  rest of the tool follows. Associated would put coverage in RGB too, making the
+  matte readable without an alpha-aware viewer. Probably offer both, defaulting to
+  associated for consistency with everything else here.
+- **Picking needs somewhere to click**, which is the viewer in item 1. That is the
+  real dependency, and the reason this is item 2 rather than item 1.
+
+Real files will not all be spec-compliant. The Redshift `extra_demo.exr` used
+during the v2.0 work carried a `Cryptomatte_` layer with only three channels and no
+rank numbering — not usable as a cryptomatte at all. Detect and say so rather than
+producing silent garbage. Also expect several types per file (`CryptoObject`,
+`CryptoMaterial`, `CryptoAsset`), and manifests that live in a sidecar file via
+`manifest_file` instead of inline.
+
+### 3. TIFF export, including 32-bit *(small — the format work is trivial)*
+
+**Feasible, and verified.** OIIO writes TIFF at 8-bit, 16-bit and 32-bit float, in
+both RGB and RGBA, and a 32-bit round-trip is bit-exact including values above 1.0.
+Compression works — `zip` beat `lzw` and `packbits` in a quick check. Note that
+`half` is silently promoted to `float`: TIFF has no half format.
+
+Adding `.tif` to the format dropdown is an afternoon. The question worth settling
+first is **what 32-bit is for**, because the two answers want different behaviour:
+
+- *Display-referred float* — the ACES transform applied, values in 0–1, just stored
+  at 32-bit. Consistent with everything else the tool does, but nobody needs 32
+  bits to hold 0–1.
+- *Scene-linear passthrough* — no display transform, original linear values kept.
+  This is almost certainly the real reason to want 32-bit, and it turns the tool
+  into an EXR→TIFF linear converter for plate and DI delivery.
+
+The second is more useful and is a genuine behaviour change, not a format toggle,
+so it should be an explicit "linear (no display transform)" choice rather than
+something inferred from picking 32-bit. Worth pairing with 16-bit half-float TIFF
+being unavailable, so the honest options are 8/16-bit integer display-referred, or
+32-bit float linear.
+
+### 4. Parallel conversion *(medium)*
 
 One worker thread today. OIIO and OCIO both release the GIL, so a `ThreadPool` over
 frames should scale close to linearly — which matters most for the sequences now
 that a 240-frame render is one click.
 
-### 3. Smaller things
+### 5. Smaller things
 
 - **Per-file layer override.** The dropdown applies one choice to the batch, falling
   back to auto-detect per file. Mixed batches would benefit from remembering a
@@ -147,6 +206,7 @@ that a 240-frame render is one click.
 - **Presets** — save a named set of settings, since studios use one combination for
   months at a time.
 - **WebP / JPEG-XL** output, if a smaller display-ready format is ever wanted.
+  Lower priority than TIFF (item 3), which has an actual pipeline reason to exist.
 - **CLI entry point.** `core.py` is already importable; a thin `argparse` wrapper
   would make it render-farm usable.
 
@@ -158,6 +218,7 @@ that a 240-frame render is one click.
 - The layer dropdown is populated from the selected entry. Other files fall back to
   auto-detect, with a warning.
 - Conversion is single-threaded.
-- The window is dark-only. That is deliberate — judging a render against a light
-  surround is bad practice — but `theme.css` carries a full light scale if it is
-  ever wanted.
+- Cryptomatte layers are correctly *excluded* from beauty auto-detection, but are
+  not otherwise understood — no picking, no matte export. See V3 item 2.
+- Output is PNG or JPEG only. No TIFF, and no way to write scene-linear data: every
+  path applies a display transform. See V3 item 3.
