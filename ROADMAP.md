@@ -79,6 +79,15 @@ including type-ahead.
 **Folder tidied.** `EXRtoSRGB.exe` is written to the repo root instead of `dist/`,
 PyInstaller's scratch goes to `%TEMP%`, and `exrs_tests/` is gitignored.
 
+**Drag-and-drop actually fixed.** It was still broken after the pywebview move, for
+a reason that had nothing to do with the port: `dragover` never called
+`preventDefault()`, so the browser did not treat the window as a drop target and
+the `drop` event never fired at all. That has to happen synchronously in JS —
+pywebview dispatches DOM events to a worker thread, far too late to prevent a
+default — so `wireDrag()` in `ui/app.js` now owns dragenter/dragover/dragleave and
+Python keeps only the drop, where the real paths are. See CLAUDE.md for the three
+conditions that must all hold, and why a real drop cannot be simulated in a test.
+
 ---
 
 ## V3

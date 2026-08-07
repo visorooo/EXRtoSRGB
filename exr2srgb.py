@@ -24,6 +24,7 @@ import threading
 import traceback
 
 import webview
+from webview.dom import DOMEventHandler
 
 import core
 
@@ -369,12 +370,16 @@ def attach_dnd(window, api):
     and pushes the result back to JS rather than the other way round.
     """
     def on_drop(event):
-        paths = []
-        for f in event.get("dataTransfer", {}).get("files", []):
-            p = f.get("pywebviewFullPath")
-            if p:
-                paths.append(p)
+        files = event.get("dataTransfer", {}).get("files", []) or []
+        paths = [f["pywebviewFullPath"] for f in files if f.get("pywebviewFullPath")]
         api._js("onDragState", False)
+        if files and not paths:
+            # The event arrived but WebView2 did not attach real paths, so there
+            # is nothing to open. Say so instead of appearing to ignore the drop.
+            api._js("onLog",
+                    "Dropped %d file(s) but Windows did not supply their paths - "
+                    "use Add files instead." % len(files), "err")
+            return
         if not paths:
             return
         exrs = [p for p in paths
@@ -388,26 +393,29 @@ def attach_dnd(window, api):
                     "Ignored %d file(s) - only .exr is accepted" % skipped, "warn")
         api._push_files()
 
-    def on_over(event):
-        api._js("onDragState", True)
-
-    def on_leave(event):
-        api._js("onDragState", False)
-
+    # Only `drop` is handled here. dragenter/dragover/dragleave are handled in
+    # JS (see wireDrag in ui/app.js) because they must call preventDefault
+    # synchronously, and because dragover fires continuously - routing it over
+    # the bridge would be a stream of pointless IPC.
+    #
     # Element.on() rather than `events.drop +=`: the events container is built
     # from the properties the DOM node actually reports, and a plain <div> does
     # not advertise a drop event, so the += form raises AttributeError.
+    #
+    # DOMEventHandler(prevent_default=True) matters: it injects preventDefault
+    # into the JS shim, stopping WebView2 from navigating away to the dropped
+    # file. Registering the listener is also what makes pywebview attach real
+    # paths - it only forwards CoreWebView2File objects when a drop listener
+    # exists.
     try:
         body = window.dom.get_element("body")
         if body is None:
-            return
-        body.on("dragenter", on_over)
-        body.on("dragover", on_over)
-        body.on("dragleave", on_leave)
-        body.on("drop", on_drop)
+            raise RuntimeError("no <body> element to bind drop to")
+        body.on("drop", DOMEventHandler(on_drop, prevent_default=True))
     except Exception:
         # drag-and-drop is a convenience; the buttons still work without it
         traceback.print_exc()
+        api._js("onLog", "Drag-and-drop unavailable - use Add files.", "warn")
 
 
 def main():

@@ -309,6 +309,45 @@ async function refreshLayers() {
  * Wiring
  * ------------------------------------------------------------------------ */
 
+/*
+ * Drag feedback, and the reason drops work at all.
+ *
+ * A browser only fires `drop` if `dragover` called preventDefault() — otherwise
+ * it treats the page as a non-drop-target and hands the file to its default
+ * handler instead. That has to happen synchronously in JS: pywebview dispatches
+ * DOM events to Python on a worker thread, which is far too late to prevent a
+ * default. Python still owns the drop itself, because that is where the real
+ * file paths are injected; this only clears the way and paints the state.
+ *
+ * dragenter/dragleave fire for every child element crossed, so the highlight is
+ * refcounted rather than toggled, or it flickers as the cursor moves.
+ */
+function wireDrag() {
+  let depth = 0;
+  const panel = () => $('files-panel');
+
+  const allow = (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  };
+
+  window.addEventListener('dragenter', (e) => {
+    allow(e);
+    depth += 1;
+    panel().classList.add('dragging');
+  });
+  window.addEventListener('dragover', allow);
+  window.addEventListener('dragleave', () => {
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) panel().classList.remove('dragging');
+  });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    depth = 0;
+    panel().classList.remove('dragging');
+  });
+}
+
 function wire() {
   $('btn-add-files').onclick = async () => {
     await window.pywebview.api.add_files_dialog();
@@ -418,6 +457,7 @@ function applyDefaults() {
 
 window.addEventListener('pywebviewready', async () => {
   wire();
+  wireDrag();
   applyDefaults();
   syncFormat();
   // Swap the native <select>s for the animated ones. The originals stay in the

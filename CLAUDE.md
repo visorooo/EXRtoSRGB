@@ -54,6 +54,35 @@ tested without opening a window.
   `AttributeError`. The handler runs in Python because that is where pywebview
   injects `pywebviewFullPath`; the browser alone never sees a real path.
 
+### Why drag-drop breaks, and how to tell
+
+Three separate things must hold. Any one missing looks identical from outside —
+you drag a file on and nothing happens at all.
+
+1. **`dragover` must call `preventDefault()` in JavaScript.** Without it the page
+   is not a drop target and the `drop` event never fires. This cannot be done from
+   Python: pywebview dispatches DOM events to a worker thread, long after the
+   default would have applied. `wireDrag()` in `ui/app.js` owns this, and owns the
+   hover state too, because `dragover` fires continuously and routing it over the
+   bridge is a stream of pointless IPC. **This is what was broken in v2.0.**
+2. **The `drop` listener must be registered through pywebview**, which increments
+   `webview.dom._dnd_state['num_listeners']`. WebView2 only forwards
+   `CoreWebView2File` objects when that count is above zero — no listener, no
+   paths, even if the event fires.
+3. **`DOMEventHandler(on_drop, prevent_default=True)`** on the drop itself, or
+   WebView2 navigates away to the dropped file.
+
+Verify with: `_dnd_state['num_listeners'] == 1`, `window.dom._elements` containing
+one element whose `_event_handlers['drop']` is non-empty, and a synthetic
+`dragover` reporting `defaultPrevented == true`.
+
+**A real drop cannot be simulated.** `postMessageWithAdditionalObjects` rejects
+constructed `File` objects — *"additional File object is not a file on the disk"* —
+and that throw aborts the bridge call before Python is reached. To exercise the
+Python side, call the registered handler directly with
+`{"dataTransfer": {"files": [{"name": ..., "pywebviewFullPath": ...}]}}`. The final
+mile needs a human dragging from Explorer.
+
 **`ui/app.js`** — `applyDefaults()` sets every control from code at startup.
 WebView2 restores form state from its profile across launches, which silently
 flipped un-premultiply off between runs. Do not rely on `checked` in the markup.
