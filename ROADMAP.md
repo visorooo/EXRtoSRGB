@@ -96,6 +96,16 @@ conditions that must all hold, and why a real drop cannot be simulated in a test
 
 ## Shipped — v2.1 (V3 in progress)
 
+**Parallel conversion.** Batches run across a thread pool instead of one frame
+at a time. OIIO and OCIO both release the GIL for decoding and the transform, so
+threads genuinely overlap: **5.07× on 16 × 1080p frames** (12.50s → 2.46s at eight
+workers). Workers are capped at eight because the work is memory-bandwidth bound
+well before it is core bound — each holds a full float frame.
+
+Results are reported in submission order rather than completion order, so the log
+still reads like the file list, and a test asserts threaded output is pixel-identical
+to serial.
+
 **Cryptomatte matte export.** The manifest is read out of EXR metadata and every
 object or material listed for selection; ticked objects export as white
 silhouettes with alpha, one file each or combined.
@@ -171,11 +181,37 @@ way), or move the transform to the GPU via OCIO's GPU path and a WebGL canvas
 Worth splitting into its own repo if it grows past a single window; the two tools
 share `core.py` and little else.
 
-### 2. Parallel conversion *(medium)*
+### 2. Sequence player by the preview *(small — and measured)*
 
-One worker thread today. OIIO and OCIO both release the GIL, so a `ThreadPool` over
-frames should scale close to linearly — which matters most for the sequences now
-that a 240-frame render is one click.
+Step and scrub through a sequence's frames next to the existing preview. Much
+smaller than the viewer above and worth doing first, because `make_thumbnail`
+already does the work; only *which* frame it is handed has to change.
+
+Measured cost of one preview frame, which is what sets the ceiling:
+
+| Source | 512px preview | 256px preview |
+|---|---|---|
+| 1920×1080 RGBA half (16 MB) | **125 ms** | 92 ms |
+| 2160², 80 channels (466 MB) | **860 ms** | 776 ms |
+
+Halving the preview barely helps, which is the important finding: **the cost is
+reading and decoding the EXR, not the transform or the resize**. That is fixed per
+frame and cannot be optimised away — only avoided by not re-reading.
+
+So the work splits cleanly:
+
+- **Stepping and scrubbing** — a frame slider, prev/next, and a frame counter,
+  re-rendering the preview on change. Straightforward. Feels fine on ordinary
+  plates at ~8 fps; a heavy multi-AOV frame at 860 ms will feel like stepping, not
+  scrubbing, and should show the spinner it already has.
+- **Smooth playback** — needs the frames pre-rendered, because 125 ms/frame is 8 fps
+  at best and 24 is not reachable by re-reading. Pre-render the sequence's previews
+  into a cache using the thread pool from parallel conversion, then play from
+  memory. A 512px preview is ~1 MB raw or ~150 KB as the PNG data URI already
+  produced, so a 240-frame sequence caches in roughly 35 MB — cheap enough to hold.
+
+Only the second part is real work, and it is the same latency problem the viewer
+has, solved once for both.
 
 ### 3. Smaller things
 
@@ -200,6 +236,5 @@ that a 240-frame render is one click.
 - Only the first subimage of a multi-part EXR is read.
 - The layer dropdown is populated from the selected entry. Other files fall back to
   auto-detect, with a warning.
-- Conversion is single-threaded.
 - Cryptomatte objects are selected from a list. Picking by clicking the image
   needs the viewer (item 1).

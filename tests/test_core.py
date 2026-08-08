@@ -659,6 +659,78 @@ def test_crypto_layers_still_excluded_from_beauty():
 
 
 # ---------------------------------------------------------------------------
+# Parallel conversion
+# ---------------------------------------------------------------------------
+
+def _frames(tmp_path, n=6):
+    out = []
+    for i in range(1, n + 1):
+        p = str(tmp_path / ("f.%04d.exr" % i))
+        arr = np.full((2, 2, 3), i / 100.0, dtype=np.float32)
+        o = oiio.ImageOutput.create(p)
+        o.open(p, oiio.ImageSpec(2, 2, 3, "float"))
+        o.write_image(arr)
+        o.close()
+        out.append(p)
+    return out
+
+
+def test_convert_many_converts_everything(tmp_path):
+    files = _frames(tmp_path)
+    out = tmp_path / "out"
+    res = core.convert_many(files, settings(out), workers=4)
+    assert len(res) == len(files)
+    assert all(r[2] is None for r in res), "no frame should have errored"
+    assert len(list(out.glob("*.png"))) == len(files)
+
+
+def test_convert_many_preserves_order(tmp_path):
+    """Completion order is a race; the log has to read like the file list."""
+    files = _frames(tmp_path, 12)
+    seen = []
+    core.convert_many(files, settings(tmp_path / "o"), workers=6,
+                      on_result=lambda i, p, o, inf, e: seen.append((i, p)))
+    assert [i for i, _ in seen] == list(range(len(files)))
+    assert [p for _, p in seen] == files
+
+
+def test_convert_many_matches_serial(tmp_path):
+    """Threading must not change a single pixel."""
+    files = _frames(tmp_path, 4)
+    a, b = tmp_path / "a", tmp_path / "b"
+    for f in files:
+        core.convert_one(f, settings(a))
+    core.convert_many(files, settings(b), workers=4)
+    for f in files:
+        name = os.path.basename(f).replace(".exr", ".png")
+        assert np.array_equal(read_u8(str(a / name)), read_u8(str(b / name)))
+
+
+def test_convert_many_survives_a_bad_file(tmp_path):
+    """One unreadable frame must not take the batch down with it."""
+    files = _frames(tmp_path, 4)
+    bad = str(tmp_path / "f.0099.exr")
+    open(bad, "wb").write(b"not an exr")
+    res = core.convert_many(files + [bad], settings(tmp_path / "o"), workers=3)
+    assert sum(1 for r in res if r[2] is not None) == 1
+    assert sum(1 for r in res if r[2] is None) == len(files)
+
+
+def test_convert_many_honours_cancel(tmp_path):
+    files = _frames(tmp_path, 8)
+    res = core.convert_many(files, settings(tmp_path / "o"), workers=2,
+                            should_stop=lambda: True)
+    assert all(r[0] is None for r in res), "nothing should have been written"
+
+
+def test_worker_count_is_bounded(tmp_path):
+    """More workers than frames is waste; each holds a full float frame."""
+    assert 1 <= core.default_workers() <= 8
+    files = _frames(tmp_path, 2)
+    core.convert_many(files, settings(tmp_path / "o"), workers=99)
+
+
+# ---------------------------------------------------------------------------
 # Sequence grouping
 # ---------------------------------------------------------------------------
 

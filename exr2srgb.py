@@ -401,6 +401,8 @@ class Api:
             head = "%s · %s · %s %d-bit" % (
                 core.describe_config(settings["config"]), settings["view"],
                 fmt.upper(), bits)
+        if len(files) > 1:
+            head += " · %d threads" % min(core.default_workers(), len(files))
         self._js("onLog", head, "dim")
         self.worker = threading.Thread(target=self._run, args=(files, settings),
                                        daemon=True)
@@ -409,28 +411,35 @@ class Api:
 
     def _run(self, files, settings):
         total = len(files)
-        ok = fail = warned = 0
-        for i, path in enumerate(files):
-            if self.cancel_flag.is_set():
-                self._js("onLog", "Cancelled.", "warn")
-                break
-            try:
-                out, info = core.convert_one(path, settings)
-                ok += 1
-                layer = info["layer"] or "R,G,B"
-                self._js("onLog", "  OK    %s   [%s]"
-                         % (os.path.basename(out), layer), "ok")
-                if info["note"]:
-                    warned += 1
-                    self._js("onLog", "        ! " + info["note"], "warn")
-            except Exception as e:
-                fail += 1
+        counts = {"ok": 0, "fail": 0, "warned": 0, "done": 0}
+
+        def on_result(i, path, out, info, err):
+            counts["done"] += 1
+            if err is not None:
+                counts["fail"] += 1
                 self._js("onLog", "  FAIL  %s  ->  %s"
-                         % (os.path.basename(path), e), "err")
-                self._js("onLog", "        "
-                         + traceback.format_exc().splitlines()[-1], "dim")
-            self._js("onProgress", i + 1, total)
-        self._js("onDone", ok, fail, warned)
+                         % (os.path.basename(path), err), "err")
+            elif out is None:
+                return  # skipped by cancel
+            else:
+                counts["ok"] += 1
+                self._js("onLog", "  OK    %s   [%s]"
+                         % (os.path.basename(out), info["layer"] or "R,G,B"), "ok")
+                if info["note"]:
+                    counts["warned"] += 1
+                    self._js("onLog", "        ! " + info["note"], "warn")
+            self._js("onProgress", counts["done"], total)
+
+        try:
+            core.convert_many(files, settings,
+                              on_result=on_result,
+                              should_stop=self.cancel_flag.is_set)
+        except Exception as e:
+            self._js("onLog", "Batch failed: %s" % e, "err")
+            self._js("onLog", traceback.format_exc().splitlines()[-1], "dim")
+        if self.cancel_flag.is_set():
+            self._js("onLog", "Cancelled.", "warn")
+        self._js("onDone", counts["ok"], counts["fail"], counts["warned"])
 
     def cancel(self):
         self.cancel_flag.set()

@@ -433,6 +433,56 @@ def convert_one(in_path, settings):
     return out_path, {"layer": layer, "note": note, "width": W, "height": H}
 
 
+def default_workers():
+    """
+    How many frames to convert at once.
+
+    OIIO and OCIO both release the GIL for the expensive parts - decoding and
+    the transform - so threads genuinely overlap here. The cap exists because
+    the work is memory-bandwidth bound well before it is core bound: every
+    worker holds a full float frame, so a 4K RGBA plate is ~130 MB each.
+    """
+    return max(1, min(8, (os.cpu_count() or 4)))
+
+
+def convert_many(paths, settings, workers=None, on_result=None, should_stop=None):
+    """
+    Convert many files, in parallel, preserving input order in the results.
+
+    `on_result(index, path, out_path, info, error)` is called once per file, in
+    submission order, from the calling thread - pool.map's iterator is consumed
+    here, so callers do not need their own lock. `should_stop()` is polled at the
+    start of each item so a cancel takes effect without draining the batch.
+
+    Ordering matters for the log: completion order would read like a race.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    paths = list(paths)
+    if workers is None:
+        workers = default_workers()
+    workers = max(1, min(int(workers), len(paths) or 1))
+
+    results = [None] * len(paths)
+
+    def work(i_path):
+        i, path = i_path
+        if should_stop and should_stop():
+            return i, None, None, None
+        try:
+            out, info = convert_one(path, settings)
+            return i, out, info, None
+        except Exception as e:  # reported per file; one bad frame is not fatal
+            return i, None, None, e
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, out, info, err in pool.map(work, enumerate(paths)):
+            results[i] = (out, info, err)
+            if on_result:
+                on_result(i, paths[i], out, info, err)
+    return results
+
+
 # ----------------------------------------------------------------------------
 # Thumbnails
 # ----------------------------------------------------------------------------
