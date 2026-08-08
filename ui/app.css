@@ -138,7 +138,10 @@ textarea {
 
 .main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  /* Preview column width follows the size preset; a bigger preview is mostly
+     for cryptomatte picking, where a small one makes objects hard to hit. */
+  grid-template-columns: minmax(0, 1fr) var(--preview-w, 320px);
+  transition: grid-template-columns 220ms var(--ease-out);
   gap: 18px;
   padding: 18px 22px;
   overflow: hidden;
@@ -869,6 +872,85 @@ input[type='text']:focus {
 /* Ctrl held over the ID view: the pointer says the click will do something. */
 .preview-box.pickable img {
   cursor: crosshair;
+}
+
+/* --------------------------------------------------------------------------
+ * Viewer controls
+ * ------------------------------------------------------------------------ */
+
+.viewer {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.vrow .lbl {
+  flex: none;
+  width: 52px;
+}
+
+.vrow .spacer {
+  flex: 1;
+}
+
+/* Tabular so the number does not jitter as it changes under the cursor. */
+.vnum {
+  flex: none;
+  width: 38px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  height: 3px;
+  appearance: none;
+  background: var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink-soft);
+  border: 0;
+  transition:
+    background var(--duration-ui) var(--ease-ui),
+    transform var(--duration-ui) var(--ease-out);
+}
+
+input[type='range']:hover::-webkit-slider-thumb {
+  background: var(--ink);
+}
+
+input[type='range']:active::-webkit-slider-thumb {
+  background: var(--accent);
+  transform: scale(1.15);
+}
+
+.probe {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--ink-faint);
+  min-height: 34px;
+  white-space: pre-wrap;
+  user-select: text;
 }
 
 /* --------------------------------------------------------------------------

@@ -62,6 +62,26 @@ tested without opening a window.
 - **`convert_one(path, settings)`** — returns `(out_path, info)`; `info` carries
   the layer used and any warning.
 - **`group_sequences`** — collapses `name.0001.exr` runs into one entry.
+- **`convert_many`** — the thread pool. Results come back in submission order,
+  and the callback runs in the calling thread, so callers need no lock.
+- **`ViewerSession`** — the viewer's reason to exist. See below.
+
+**`ViewerSession` and why it is not just `make_thumbnail`.** The converter is a
+throughput problem; a viewer is a latency one. One preview frame costs **125 ms at
+1080p and 860 ms on a 2160² 80-channel file**, and lowering the preview resolution
+barely moves either — the cost is *decoding*, not the transform. So the session
+decodes once and keeps it, and also caches the downsampled copy per output size,
+because re-scaling the full-resolution layer was another 82 ms every render.
+Result: **4.1× at 1080p (23 fps) and 5.6× on the 2160² file**.
+
+Two things that will bite anyone editing `render()`:
+
+- **`apply_transform` writes in place.** The cached array must never be handed to
+  it directly; exposure produces a new array, and the zero-exposure path copies.
+  A test asserts repeated renders do not mutate the cache.
+- **Exposure goes before the transform, gamma after.** Exposure in linear is what
+  makes it behave like a camera stop; gamma on display values is what a
+  compositor's viewer gamma does. Swapping them changes what both controls mean.
 
 **`exr2srgb.py`** — `class Api` is the JS bridge. Two non-obvious constraints:
 

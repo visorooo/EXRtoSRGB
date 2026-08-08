@@ -941,6 +941,158 @@ def convert_mattes(in_path, settings, crypto_id, object_names):
 
 
 # ----------------------------------------------------------------------------
+# Viewer
+#
+# The converter is a throughput problem; a viewer is a latency one. Measured on
+# this machine, one preview frame costs 125 ms at 1080p and 860 ms for a 2160
+# square 80-channel file - and dropping the preview resolution barely moves
+# either, because the cost is reading and decoding the EXR rather than the
+# transform.
+#
+# So the only way to make exposure and view changes interactive is to stop
+# re-reading. ViewerSession decodes a layer once and keeps it; everything after
+# that is arithmetic on an array already in memory.
+# ----------------------------------------------------------------------------
+
+CHANNEL_MODES = ("rgb", "r", "g", "b", "a", "luma")
+
+
+class ViewerSession:
+    """
+    Holds one decoded layer so display changes do not re-read the file.
+
+    Not thread-safe by itself: the UI drives it from one worker at a time.
+    """
+
+    def __init__(self):
+        self._key = None
+        self._rgb = None
+        self._alpha = None
+        self._W = self._H = 0
+        self._layer = None
+        self._note = None
+        # Downsampling the full-resolution layer costs 82 ms on a 2160 square
+        # frame and the source never changes between renders, so the scaled
+        # copy is kept per output size.
+        self._scaled = {}
+
+    @property
+    def size(self):
+        return self._W, self._H
+
+    @property
+    def layer(self):
+        return self._layer
+
+    def load(self, path, layer=None):
+        """Decode if this is not already the layer in hand. Returns True if read."""
+        key = (path, layer, os.path.getmtime(path))
+        if key == self._key:
+            return False
+        rgb, alpha, W, H, chosen, note = read_layer(path, layer)
+        self._key = key
+        self._rgb, self._alpha = rgb, alpha
+        self._W, self._H = W, H
+        self._layer, self._note = chosen, note
+        self._scaled.clear()
+        return True
+
+    def _at_size(self, max_px):
+        """The layer scaled for this output size, computed once per size."""
+        factor = max(1, -(-max(self._W, self._H) // max_px))
+        if factor not in self._scaled:
+            if factor > 1:
+                rgb = np.ascontiguousarray(
+                    _box_downsample(self._rgb, factor), dtype=np.float32)
+                alpha = (np.ascontiguousarray(
+                    _box_downsample(self._alpha, factor), dtype=np.float32)
+                    if self._alpha is not None else None)
+            else:
+                rgb, alpha = self._rgb, self._alpha
+            self._scaled[factor] = (rgb, alpha)
+        return self._scaled[factor]
+
+    def render(self, settings, exposure=0.0, gamma=1.0, channel="rgb",
+               max_px=1024):
+        """
+        Apply exposure, the display transform and gamma, and return a data URI.
+
+        Exposure is applied in linear *before* the transform, which is what makes
+        it behave like a camera stop rather than a brightness slider. Gamma is
+        applied after, on display values, matching how a compositor's viewer
+        gamma works.
+        """
+        if self._rgb is None:
+            raise RuntimeError("nothing loaded")
+
+        rgb, alpha = self._at_size(max_px)
+        h, w = rgb.shape[:2]
+
+        # apply_transform writes in place, so the cached copy must not be handed
+        # to it directly. Exposure already produces a new array when non-zero.
+        rgb = (rgb * np.float32(2.0 ** exposure)) if exposure else rgb.copy()
+
+        if channel == "a":
+            # Alpha is not colour; show it as it is, with no transform at all.
+            a = (alpha if alpha is not None
+                 else np.ones((h, w), dtype=np.float32))
+            buf = np.repeat(np.clip(a, 0, 1)[..., None], 3, axis=2)
+        else:
+            buf, _ = apply_transform(rgb, None, w, h, settings)
+            if channel in ("r", "g", "b"):
+                i = "rgb".index(channel)
+                buf = np.repeat(buf[..., i:i + 1], 3, axis=2)
+            elif channel == "luma":
+                y = (0.2126 * buf[..., 0] + 0.7152 * buf[..., 1]
+                     + 0.0722 * buf[..., 2])
+                buf = np.repeat(y[..., None], 3, axis=2)
+
+        if gamma and gamma != 1.0:
+            buf = np.power(np.clip(buf, 0.0, 1.0), 1.0 / float(gamma))
+
+        out = np.clip(buf, 0.0, 1.0)
+        if channel == "rgb" and alpha is not None:
+            out = np.dstack([out, np.clip(alpha, 0, 1)])
+        nch = out.shape[2]
+        arr = (out * 255.0 + 0.5).astype(np.uint8)
+        return _png_data_uri(arr, w, h, nch), w, h
+
+    def sample(self, u, v):
+        """
+        Linear scene values under a normalised coordinate.
+
+        Reported from the full-resolution layer, not the preview, so the number
+        is the pixel's real value rather than a resampled approximation.
+        """
+        if self._rgb is None:
+            return None
+        x = min(self._W - 1, max(0, int(u * self._W)))
+        y = min(self._H - 1, max(0, int(v * self._H)))
+        px = self._rgb[y, x]
+        return {
+            "x": x, "y": y,
+            "r": float(px[0]), "g": float(px[1]), "b": float(px[2]),
+            "a": (float(self._alpha[y, x]) if self._alpha is not None else None),
+        }
+
+
+def _png_data_uri(arr, W, H, nchannels):
+    """OIIO's Python API has no in-memory encode, so round-trip a temp file."""
+    fd, tmp_path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        write_image(tmp_path, arr, W, H, nchannels, "uint8")
+        with open(tmp_path, "rb") as fh:
+            data = fh.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+
+
+# ----------------------------------------------------------------------------
 # Image sequences
 #
 # A render is usually 120 files that differ by a frame number. Listing them

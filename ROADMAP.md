@@ -106,6 +106,25 @@ Results are reported in submission order rather than completion order, so the lo
 still reads like the file list, and a test asserts threaded output is pixel-identical
 to serial.
 
+**Viewer, stage one.** Exposure, gamma, channel isolation (R/G/B/A/luma) and a
+pixel probe, all beside the preview. The point is `ViewerSession`: it decodes a
+layer once and keeps it, plus the downsampled copy per output size, so nothing
+re-reads the file. Measured **4.1× at 1080p — 23 fps, genuinely interactive — and
+5.6× on a 2160² 80-channel frame**.
+
+The probe reports **linear scene values from the full-resolution layer**, not the
+preview, so the number is the real pixel rather than something resampled.
+
+Profiling what is left, at 900px on the heavy file: downsample 82 ms (now cached),
+transform 40 ms, **PNG encode 108 ms**. Encoding is the next bottleneck, and
+`png:compressionLevel` turns out to be ignored by OIIO — file sizes are identical
+at every level. JPEG encodes ~4× faster but cannot carry alpha, so the honest fix
+is stage two, the GPU path.
+
+**Three preview sizes.** S/M/L widen the column and raise the render resolution
+together; a wider box showing the same 512px image would only be blurry. Large is
+mainly for cryptomatte picking, where small objects are hard to hit.
+
 **Coloured cryptomatte view, with ctrl-click picking.** The preview switches
 between the render and the Nuke/AE-style coloured ID view. Ctrl-clicking an object
 toggles it, selected objects stay lit while the rest dim, and picking is free — it

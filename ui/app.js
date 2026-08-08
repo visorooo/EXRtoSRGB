@@ -230,7 +230,7 @@ async function renderPreview() {
       const type = currentCrypto();
       if (!type) return;
       const c = await window.pywebview.api.crypto_preview(
-        state.selected, type.id, [...selectionFor(type.id)]);
+        state.selected, type.id, [...selectionFor(type.id)], previewPx());
       if (token !== previewToken) return;
       if (c.error) {
         $('preview-box').innerHTML =
@@ -243,7 +243,9 @@ async function renderPreview() {
       $('preview-note').textContent = '';
       return;
     }
-    const r = await window.pywebview.api.preview(state.selected, settings());
+    const r = await window.pywebview.api.view(
+      state.selected, settings(), viewer.exposure, viewer.gamma,
+      viewer.channel, previewPx());
     if (token !== previewToken) return; // a newer request won
     if (r.error) {
       $('preview-box').innerHTML =
@@ -326,6 +328,80 @@ window.onDragState = (on) => {
 };
 
 /* ---------------------------------------------------------------------------
+ * Viewer
+ *
+ * Exposure and gamma do not re-read the file - Python keeps the decoded layer
+ * in a ViewerSession - so these can be dragged live. The render is still tens
+ * of milliseconds, so requests are coalesced the same way the preview is.
+ * ------------------------------------------------------------------------ */
+
+const viewer = { exposure: 0, gamma: 1, channel: 'rgb' };
+
+function fmtStops(v) {
+  return (v > 0 ? '+' : '') + v.toFixed(1);
+}
+
+function wireViewer() {
+  const exposure = $('exposure');
+  const gamma = $('gamma');
+
+  const onExposure = () => {
+    viewer.exposure = parseFloat(exposure.value);
+    $('exposure-val').textContent = fmtStops(viewer.exposure);
+    schedulePreview();
+  };
+  const onGamma = () => {
+    viewer.gamma = parseFloat(gamma.value);
+    $('gamma-val').textContent = viewer.gamma.toFixed(2);
+    schedulePreview();
+  };
+  exposure.oninput = onExposure;
+  gamma.oninput = onGamma;
+
+  for (const b of $('pv-channels').querySelectorAll('button')) {
+    b.onclick = () => {
+      viewer.channel = b.dataset.ch;
+      for (const o of $('pv-channels').querySelectorAll('button')) {
+        o.classList.toggle('is-active', o === b);
+      }
+      schedulePreview();
+    };
+  }
+
+  $('viewer-reset').onclick = () => {
+    exposure.value = '0';
+    gamma.value = '1';
+    onExposure();
+    onGamma();
+  };
+
+  // Pixel probe. Values come from the full-resolution layer, so the number is
+  // the real pixel rather than something resampled for the preview.
+  const box = $('preview-box');
+  let probeTimer = null;
+  box.addEventListener('mousemove', (e) => {
+    const img = box.querySelector('img');
+    if (!img || crypto.mode === 'crypto') return;
+    const r = img.getBoundingClientRect();
+    const u = (e.clientX - r.left) / r.width;
+    const v = (e.clientY - r.top) / r.height;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    clearTimeout(probeTimer);
+    probeTimer = setTimeout(async () => {
+      const p = await window.pywebview.api.probe(state.selected, u, v);
+      if (!p || p.r === undefined) return;
+      const lin = `${p.r.toFixed(4)}  ${p.g.toFixed(4)}  ${p.b.toFixed(4)}`;
+      const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
+      $('probe').textContent =
+        `x ${p.x}  y ${p.y}\nlinear  ${lin}\nalpha   ${a}`;
+    }, 40);
+  });
+  box.addEventListener('mouseleave', () => {
+    $('probe').textContent = 'Hover the image for pixel values';
+  });
+}
+
+/* ---------------------------------------------------------------------------
  * Cryptomatte
  *
  * Selection is held per cryptomatte type, so switching between CryptoObject and
@@ -346,6 +422,35 @@ function showTab(which) {
   setPreviewMode(isCrypto ? 'crypto' : 'beauty');
 }
 
+/*
+ * Preview size presets.
+ *
+ * Each widens the column and raises the render resolution together - a wider
+ * box showing the same 512px image would just be blurry. Large is mainly for
+ * cryptomatte picking, where small objects are hard to hit accurately.
+ */
+const PREVIEW_SIZES = {
+  s: { col: 280, px: 384 },
+  m: { col: 360, px: 512 },
+  l: { col: 560, px: 900 },
+};
+
+function setPreviewSize(key, persist = true) {
+  const size = PREVIEW_SIZES[key] ? key : 'm';
+  state.previewSize = size;
+  document.documentElement.style.setProperty(
+    '--preview-w', PREVIEW_SIZES[size].col + 'px');
+  for (const b of $('pv-sizes').querySelectorAll('button')) {
+    b.classList.toggle('is-active', b.dataset.size === size);
+  }
+  if (persist) window.pywebview.api.set_preview_size(size);
+  schedulePreview();
+}
+
+function previewPx() {
+  return PREVIEW_SIZES[state.previewSize || 'm'].px;
+}
+
 function setPreviewMode(mode) {
   if (mode === 'crypto' && !crypto.types.length) mode = 'beauty';
   crypto.mode = mode;
@@ -353,6 +458,7 @@ function setPreviewMode(mode) {
     b.classList.toggle('is-active', b.dataset.mode === mode);
   }
   $('pick-hint').hidden = mode !== 'crypto';
+  $('viewer-controls').hidden = mode === 'crypto';
   schedulePreview();
 }
 
@@ -496,6 +602,9 @@ function wireCrypto() {
   $('tab-crypto').onclick = () => showTab('crypto');
   for (const b of $('pv-modes').querySelectorAll('button')) {
     b.onclick = () => setPreviewMode(b.dataset.mode);
+  }
+  for (const b of $('pv-sizes').querySelectorAll('button')) {
+    b.onclick = () => setPreviewSize(b.dataset.size);
   }
   $('crypto-type').onchange = () => { renderObjects(); schedulePreview(); };
   $('crypto-filter').oninput = renderObjects;
@@ -750,6 +859,7 @@ window.addEventListener('pywebviewready', async () => {
   wireDrag();
   wireCrypto();
   wirePicking();
+  wireViewer();
   applyDefaults();
   syncFormat();
   // Swap the native <select>s for the animated ones. The originals stay in the
@@ -757,6 +867,7 @@ window.addEventListener('pywebviewready', async () => {
   upgradeSelects();
   const init = await window.pywebview.api.init();
   setTheme(init.theme || 'dark');
+  setPreviewSize(init.preview_size || 'm', false);
   $('version').textContent = 'v' + init.version;
   await reloadConfigList(init.config);
   state.ready = true;

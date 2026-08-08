@@ -67,6 +67,23 @@ def read_u8(path):
     return arr.reshape(spec.height, spec.width, spec.nchannels)
 
 
+def _decode(uri):
+    """Decode a preview data URI back to pixels for assertions."""
+    import base64, tempfile
+    raw = base64.b64decode(uri.split(",", 1)[1])
+    fd, path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        with open(path, "wb") as fh:
+            fh.write(raw)
+        return read_u8(path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def mean_err(a, b):
     n = min(a.shape[2], b.shape[2])
     return float(np.abs(a[..., :n].astype(np.int16)
@@ -707,6 +724,134 @@ def test_crypto_layers_still_excluded_from_beauty():
     """The v1.1 rule must survive: crypto is never a beauty candidate."""
     for layer in ("CryptoObject00", "ViewLayer.CryptoMaterial00", "Cryptomatte_"):
         assert core.score_layer(layer) < 0
+
+
+# ---------------------------------------------------------------------------
+# Viewer
+# ---------------------------------------------------------------------------
+
+def _hdr_rgba(tmp_path, w=8, h=8, value=0.18):
+    """
+    Neutral grey, deliberately.
+
+    A saturated colour would be gamut-mapped by the ACES view - (0.18, 1.0, 4.0)
+    drives red to exactly 0 - which makes per-channel assertions meaningless.
+    Grey goes through the documented 0.18 -> 91 ladder instead.
+    """
+    path = str(tmp_path / "v.exr")
+    arr = np.zeros((h, w, 4), np.float32)
+    arr[..., :3] = value
+    arr[..., 3] = 0.5
+    o = oiio.ImageOutput.create(path)
+    o.open(path, oiio.ImageSpec(w, h, 4, "float"))
+    o.write_image(arr)
+    o.close()
+    return path
+
+
+def test_viewer_caches_the_decode(tmp_path):
+    """The whole point: a second load of the same layer must not re-read."""
+    v = core.ViewerSession()
+    p = _hdr_rgba(tmp_path)
+    assert v.load(p) is True
+    assert v.load(p) is False
+    assert v.size == (8, 8)
+
+
+def test_viewer_reloads_when_layer_changes(tmp_path):
+    names = ["%s.%s" % (l, c) for l in ("Beauty", "Other") for c in "RGB"]
+    path = str(tmp_path / "two.exr")
+    spec = oiio.ImageSpec(4, 4, 6, "float")
+    spec.channelnames = tuple(names)
+    o = oiio.ImageOutput.create(path)
+    o.open(path, spec)
+    o.write_image(np.zeros((4, 4, 6), np.float32))
+    o.close()
+    v = core.ViewerSession()
+    assert v.load(path, "Beauty") is True
+    assert v.load(path, "Beauty") is False
+    assert v.load(path, "Other") is True, "a different layer must re-read"
+
+
+def test_exposure_is_a_stop_not_a_multiplier(tmp_path):
+    """
+    Exposure is applied in linear before the transform, so +1 stop doubles the
+    scene value. Applied after, it would just brighten display values.
+    """
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path))
+    s = settings(tmp_path)
+    base = _decode(v.render(s, exposure=0.0, max_px=8)[0])
+    up = _decode(v.render(s, exposure=1.0, max_px=8)[0])
+    assert up[..., 0].mean() > base[..., 0].mean()
+    # 0.18 doubled is 0.36; through the ACES curve that is well above 91/255
+    assert up[0, 0, 0] > base[0, 0, 0] + 20
+
+
+def test_gamma_changes_output(tmp_path):
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path))
+    s = settings(tmp_path)
+    a = _decode(v.render(s, gamma=1.0, max_px=8)[0])
+    b = _decode(v.render(s, gamma=2.2, max_px=8)[0])
+    assert b[..., 0].mean() > a[..., 0].mean(), "gamma > 1 should lift midtones"
+
+
+@pytest.mark.parametrize("channel", list(core.CHANNEL_MODES))
+def test_channel_modes_render(tmp_path, channel):
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path))
+    uri, w, h = v.render(settings(tmp_path), channel=channel, max_px=8)
+    px = _decode(uri)
+    assert (w, h) == (8, 8)
+    if channel in ("r", "g", "b", "a", "luma"):
+        # isolated channels are shown as grey, so the three are equal
+        assert np.array_equal(px[..., 0], px[..., 1])
+        assert np.array_equal(px[..., 1], px[..., 2])
+
+
+def test_alpha_channel_bypasses_the_transform(tmp_path):
+    """Alpha is coverage, not colour; an ACES curve on it would be wrong."""
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path))
+    px = _decode(v.render(settings(tmp_path), channel="a", max_px=8)[0])
+    assert abs(int(px[0, 0, 0]) - 128) <= 1, "0.5 alpha should read as ~128"
+
+
+def test_render_does_not_corrupt_the_cache(tmp_path):
+    """apply_transform writes in place; the cached layer must survive it."""
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path))
+    s = settings(tmp_path)
+    first = v.render(s, max_px=8)[0]
+    for _ in range(3):
+        v.render(s, exposure=2.0, max_px=8)
+        v.render(s, channel="g", max_px=8)
+    assert v.render(s, max_px=8)[0] == first, "cached pixels were mutated"
+
+
+def test_probe_reports_full_res_linear_values(tmp_path):
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path, w=64, h=64))
+    v.render(settings(tmp_path), max_px=8)   # a heavily downsampled view
+    p = v.sample(0.5, 0.5)
+    # the scene value, not the 0.356 the display transform would show
+    assert p["r"] == pytest.approx(0.18)
+    assert p["g"] == pytest.approx(0.18)
+    assert p["a"] == pytest.approx(0.5)
+    assert 0 <= p["x"] < 64 and 0 <= p["y"] < 64
+
+
+def test_probe_clamps_out_of_range(tmp_path):
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path))
+    for u, v_ in ((-5.0, 0.5), (9.0, 0.5), (0.5, -2.0), (0.5, 4.0)):
+        assert v.sample(u, v_) is not None
+
+
+def test_render_before_load_raises(tmp_path):
+    with pytest.raises(RuntimeError):
+        core.ViewerSession().render(settings(tmp_path))
 
 
 # ---------------------------------------------------------------------------
