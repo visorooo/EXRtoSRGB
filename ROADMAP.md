@@ -96,6 +96,25 @@ conditions that must all hold, and why a real drop cannot be simulated in a test
 
 ## Shipped — v2.1 (V3 in progress)
 
+**Cryptomatte matte export.** The manifest is read out of EXR metadata and every
+object or material listed for selection; ticked objects export as white
+silhouettes with alpha, one file each or combined.
+
+Validated against a real Blender 5.2 render rather than only the synthetic
+fixture, which is what surfaced the things that actually matter: a single rank's
+coverage can exceed 1.0 (2.633 measured — the pixel filter accumulates), mattes do
+*not* sum to 1.0 in practice because rank count is capped by the render's Levels
+setting, and object names are arbitrary Unicode. Ten of that file's own manifest
+hashes are now known-answer tests for our MurmurHash3_32.
+
+The one real constraint: OIIO's PNG writer always associates alpha, so "flat white
+RGB + alpha" is indistinguishable from "coverage in RGB" in a PNG. That mode
+therefore forces TIFF. The default — coverage in RGB and alpha — is a correct
+white silhouette anyway, with properly premultiplied edges.
+
+Picking by clicking the image still wants the viewer; selecting from a list does
+not, which is why this landed first.
+
 **TIFF output, and scene-linear.** TIFF writes at 8, 16 and 32-bit float. More
 interesting is the third entry now in the Look dropdown: **scene-linear**, which
 applies no display transform at all and hands back the render's original values.
@@ -152,49 +171,13 @@ way), or move the transform to the GPU via OCIO's GPU path and a WebGL canvas
 Worth splitting into its own repo if it grows past a single window; the two tools
 share `core.py` and little else.
 
-### 2. Cryptomatte picking and matte export *(large — depends on the viewer)*
-
-**Feasible, and verified.** A synthetic spec-compliant cryptomatte was written and
-read back: the metadata parsed, picking a pixel resolved to the right object name,
-and coverage extraction handled a mixed edge pixel correctly. The proof that it is
-right is that every matte in the image summed to exactly 1.0 per pixel.
-
-Cryptomatte stores the manifest in EXR metadata — `cryptomatte/<id>/name`, `/hash`,
-`/conversion`, `/manifest` — where the manifest is JSON mapping object names to
-MurmurHash3_32 values. The channels come in pairs: `CryptoObject00.R` is an ID and
-`.G` its coverage, `.B`/`.A` the next rank, continuing into `CryptoObject01`. To
-extract a matte you sum coverage across every rank where the ID matches.
-`MurmurHash3_32` and the spec's `uint32_to_float32` conversion (with its exponent
-clamp) both have to be implemented exactly, or IDs will not match.
-
-Three things decide whether this is good or merely working:
-
-- **Mattes must not go through the display transform.** Coverage is data, not
-  colour. Running it through an ACES view would be as wrong as converting a normal
-  pass. This bypasses `apply_transform` entirely — the same lesson as
-  `_DATA_LAYER_TOKENS`.
-- **"Flat white with alpha" needs defining.** RGB 1.0 with coverage in alpha is the
-  obvious reading, but that file is *unassociated*, which contradicts the rule the
-  rest of the tool follows. Associated would put coverage in RGB too, making the
-  matte readable without an alpha-aware viewer. Probably offer both, defaulting to
-  associated for consistency with everything else here.
-- **Picking needs somewhere to click**, which is the viewer in item 1. That is the
-  real dependency, and the reason this is item 2 rather than item 1.
-
-Real files will not all be spec-compliant. The Redshift `extra_demo.exr` used
-during the v2.0 work carried a `Cryptomatte_` layer with only three channels and no
-rank numbering — not usable as a cryptomatte at all. Detect and say so rather than
-producing silent garbage. Also expect several types per file (`CryptoObject`,
-`CryptoMaterial`, `CryptoAsset`), and manifests that live in a sidecar file via
-`manifest_file` instead of inline.
-
-### 3. Parallel conversion *(medium)*
+### 2. Parallel conversion *(medium)*
 
 One worker thread today. OIIO and OCIO both release the GIL, so a `ThreadPool` over
 frames should scale close to linearly — which matters most for the sequences now
 that a 240-frame render is one click.
 
-### 4. Smaller things
+### 3. Smaller things
 
 - **Per-file layer override.** The dropdown applies one choice to the batch, falling
   back to auto-detect per file. Mixed batches would benefit from remembering a
@@ -218,5 +201,5 @@ that a 240-frame render is one click.
 - The layer dropdown is populated from the selected entry. Other files fall back to
   auto-detect, with a warning.
 - Conversion is single-threaded.
-- Cryptomatte layers are correctly *excluded* from beauty auto-detection, but are
-  not otherwise understood — no picking, no matte export. See V3 item 2.
+- Cryptomatte objects are selected from a list. Picking by clicking the image
+  needs the viewer (item 1).

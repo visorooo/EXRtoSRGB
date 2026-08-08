@@ -159,6 +159,46 @@
               </div>
             </div>
           </section>
+
+          <!--
+            Only shown when the selected file actually has cryptomattes, so
+            files without them are not cluttered by a dead panel.
+          -->
+          <section class="panel" id="crypto-panel" hidden>
+            <div class="panel-head">
+              <span class="panel-title">Cryptomatte</span>
+              <span class="spacer"></span>
+              <span class="sub" id="crypto-count"></span>
+            </div>
+            <div class="crypto-body">
+              <div class="crypto-row">
+                <select autocomplete="off" id="crypto-type"></select>
+                <input
+                  type="text"
+                  autocomplete="off"
+                  id="crypto-filter"
+                  placeholder="Filter objects…"
+                />
+              </div>
+              <div class="objlist" id="crypto-objects"></div>
+              <div class="crypto-row">
+                <select autocomplete="off" id="matte-mode">
+                  <option value="associated">White silhouette (premultiplied)</option>
+                  <option value="straight">Flat white RGB · TIFF only</option>
+                </select>
+                <select autocomplete="off" id="matte-split">
+                  <option value="each">One file per object</option>
+                  <option value="combined">Combine into one</option>
+                </select>
+              </div>
+              <div class="crypto-row">
+                <button class="ghost" id="crypto-all">Select all</button>
+                <button class="ghost" id="crypto-none">Clear</button>
+                <span class="spacer"></span>
+                <button id="btn-mattes">Export mattes</button>
+              </div>
+            </div>
+          </section>
         </div>
 
         <!-- right column: preview -->

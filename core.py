@@ -11,7 +11,9 @@ isolation - see tests/test_core.py.
 
 import os
 import re
+import json
 import base64
+import struct
 import tempfile
 
 import numpy as np
@@ -495,6 +497,290 @@ def make_thumbnail(path, settings, max_px=512):
     uri = "data:image/png;base64," + base64.b64encode(data).decode("ascii")
     return uri, {"layer": layer, "note": note, "width": W, "height": H,
                  "preview_only": linear}
+
+
+# ----------------------------------------------------------------------------
+# Cryptomatte
+#
+# The manifest lives in EXR metadata as cryptomatte/<id>/{name,hash,conversion,
+# manifest}, where the manifest is JSON mapping object names to MurmurHash3_32
+# values in hex. Channels come in ID/coverage pairs: for a layer named
+# "ViewLayer.CryptoObject", the channels are ViewLayer.CryptoObject00.r (an ID),
+# .g (its coverage), .b (the next ID), .a (its coverage), continuing into
+# ...01, ...02 for deeper ranks.
+#
+# Both the hash and the float conversion have to match the renderer bit for bit
+# or no ID will ever compare equal. Verified against a Blender 5.2 render: all
+# 25 manifest entries hashed identically, including one with a non-ASCII name.
+# ----------------------------------------------------------------------------
+
+_CRYPTO_RANK_RE = re.compile(r"^(?P<base>.+?)(?P<rank>\d{2})$")
+
+
+def murmur3_32(key, seed=0):
+    """MurmurHash3 x86 32-bit, as the Cryptomatte specification requires."""
+    data = key.encode("utf-8")
+    length = len(data)
+    nblocks = length // 4
+    h = seed
+    c1, c2 = 0xCC9E2D51, 0x1B873593
+    for i in range(nblocks):
+        k = struct.unpack_from("<I", data, i * 4)[0]
+        k = (k * c1) & 0xFFFFFFFF
+        k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF
+        k = (k * c2) & 0xFFFFFFFF
+        h ^= k
+        h = ((h << 13) | (h >> 19)) & 0xFFFFFFFF
+        h = (h * 5 + 0xE6546B64) & 0xFFFFFFFF
+    tail = data[nblocks * 4:]
+    k = 0
+    for i, ch in enumerate(tail):
+        k |= ch << (8 * i)
+    if tail:
+        k = (k * c1) & 0xFFFFFFFF
+        k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF
+        k = (k * c2) & 0xFFFFFFFF
+        h ^= k
+    h ^= length
+    h ^= h >> 16
+    h = (h * 0x85EBCA6B) & 0xFFFFFFFF
+    h ^= h >> 13
+    h = (h * 0xC2B2AE35) & 0xFFFFFFFF
+    h ^= h >> 16
+    return h
+
+
+def hash_to_float(h):
+    """
+    The spec's uint32_to_float32: reinterpret the bits as float32.
+
+    The exponent clamp matters. All-zero or all-one exponents are NaN/Inf/zero,
+    none of which survive a float comparison, so those hashes get a bit flipped.
+    """
+    exponent = h >> 23 & 255
+    if exponent in (0, 255):
+        h ^= 1 << 23
+    return struct.unpack("<f", struct.pack("<I", h))[0]
+
+
+def name_to_id(name):
+    return hash_to_float(murmur3_32(name))
+
+
+def probe_cryptomattes(path):
+    """
+    Find the cryptomatte types in an EXR.
+
+    Returns a list of dicts: {id, name, label, objects, ranks, incomplete}.
+    `ranks` is a list of (id_channel, coverage_channel) index pairs. An entry
+    with no usable ranks is reported with incomplete=True rather than dropped,
+    so the UI can explain instead of silently offering nothing.
+    """
+    src = oiio.ImageInput.open(path)
+    if src is None:
+        raise IOError("Could not open EXR: %s" % oiio.geterror())
+    spec = src.spec()
+    channels = list(spec.channelnames)
+    meta = {a.name: a.value for a in spec.extra_attribs}
+    src.close()
+
+    blocks = {}
+    for key, value in meta.items():
+        if not key.startswith("cryptomatte/"):
+            continue
+        parts = key.split("/", 2)
+        if len(parts) == 3:
+            blocks.setdefault(parts[1], {})[parts[2]] = value
+
+    # channel layer -> {component: index}
+    by_layer = {}
+    for i, chan in enumerate(channels):
+        layer, comp = split_channel(chan)
+        if comp:
+            by_layer.setdefault(layer, {})[comp] = i
+
+    out = []
+    for cid, block in sorted(blocks.items()):
+        name = block.get("name") or ""
+        objects = {}
+        raw = block.get("manifest")
+        if raw:
+            try:
+                for obj, hexhash in json.loads(raw).items():
+                    objects[obj] = hash_to_float(int(hexhash, 16))
+            except (ValueError, TypeError):
+                pass
+
+        # rank layers are "<name>00", "<name>01", ... each holding two ranks
+        ranks = []
+        for layer in sorted(by_layer):
+            m = _CRYPTO_RANK_RE.match(layer)
+            if not m or m.group("base") != name:
+                continue
+            comps = by_layer[layer]
+            if {"r", "g"} <= set(comps):
+                ranks.append((comps["r"], comps["g"]))
+            if {"b", "a"} <= set(comps):
+                ranks.append((comps["b"], comps["a"]))
+
+        out.append({
+            "id": cid,
+            "name": name,
+            # "ViewLayer.CryptoObject" reads better as "CryptoObject"
+            "label": name.rsplit(".", 1)[-1] if name else cid,
+            "objects": objects,
+            "ranks": ranks,
+            "incomplete": not ranks or not objects,
+        })
+    return out
+
+
+def read_crypto_ranks(path, ranks):
+    """Read the ID/coverage channel pairs for one cryptomatte type."""
+    wanted = sorted({i for pair in ranks for i in pair})
+    src = oiio.ImageInput.open(path)
+    if src is None:
+        raise IOError("Could not open EXR: %s" % oiio.geterror())
+    try:
+        spec = src.spec()
+        W, H = spec.width, spec.height
+        lo, hi = wanted[0], wanted[-1] + 1
+        pixels = src.read_image(0, 0, lo, hi, "float")
+    finally:
+        src.close()
+    arr = np.array(pixels, dtype=np.float32).reshape(H, W, hi - lo)
+    return [(arr[..., a - lo], arr[..., b - lo]) for a, b in ranks], W, H
+
+
+def extract_matte(path, crypto, object_names):
+    """
+    Build a coverage matte for the named objects.
+
+    Returns (coverage HxW float32 in 0..1, W, H). Coverage is summed across
+    every rank whose ID matches, then clamped: a single rank can legitimately
+    exceed 1.0 because the renderer's pixel filter accumulates (a Blender render
+    reached 2.633), so the clamp is required, not defensive.
+    """
+    targets = [crypto["objects"][n] for n in object_names
+               if n in crypto["objects"]]
+    if not targets:
+        raise ValueError("none of those objects are in this cryptomatte")
+
+    pairs, W, H = read_crypto_ranks(path, crypto["ranks"])
+    cov = np.zeros((H, W), dtype=np.float32)
+    for ids, weights in pairs:
+        hit = np.zeros((H, W), dtype=bool)
+        for t in targets:
+            hit |= (ids == t)
+        cov += np.where(hit, weights, 0.0)
+    return np.clip(cov, 0.0, 1.0), W, H
+
+
+def resolve_matte_output(settings):
+    """
+    Container and depth for a matte.
+
+    "straight" (RGB pinned to 1.0) only survives in TIFF. OIIO's PNG writer
+    always associates alpha, so RGB 1.0 comes back as the coverage and the two
+    modes collapse into the same file - measured, not assumed. Rather than write
+    something that silently is not what was asked for, straight upgrades to TIFF
+    the same way scene-linear does.
+    """
+    fmt = settings.get("format", "png")
+    if fmt == "jpeg":
+        fmt = "png"  # a matte without alpha is not a matte
+    bits = int(settings.get("bits", 16))
+    if settings.get("matte_mode", "associated") == "straight":
+        fmt = "tiff"
+    if bits == 32 and fmt != "tiff":
+        bits = 16
+    pix_fmt = "float" if bits == 32 else ("uint16" if bits == 16 else "uint8")
+    return fmt, pix_fmt, bits
+
+
+def matte_filename(in_path, crypto, object_name, settings, index=None):
+    """A filesystem-safe name per matte, since object names are arbitrary."""
+    out_dir = settings.get("out_dir") or os.path.dirname(in_path)
+    base = os.path.splitext(os.path.basename(in_path))[0]
+    # object names come from the DCC and may hold spaces, dots or emoji
+    safe = re.sub(r"[^\w.\-]+", "_", object_name).strip("_") or "matte"
+    if index is not None:
+        safe = "%s_%s" % (crypto["label"], safe)
+    fmt, _, _ = resolve_matte_output(settings)
+    return os.path.join(out_dir, "%s_%s%s" % (base, safe, EXTENSIONS[fmt]))
+
+
+def write_matte(out_path, cov, W, H, settings):
+    """
+    Write a coverage matte as a white silhouette with alpha.
+
+    No display transform: coverage is data, not colour, and running it through
+    an ACES view would be as wrong as tone-mapping a normal pass.
+
+    Default is associated - coverage in RGB as well as alpha. A fully covered
+    pixel is therefore white and a partial edge is correctly premultiplied
+    white, which is what "flat white with alpha" means once edges are handled
+    properly. "straight" pins RGB to 1.0 and leaves the shape only in alpha;
+    see resolve_matte_output for why that needs TIFF.
+    """
+    fmt, pix_fmt, bits = resolve_matte_output(settings)
+    if settings.get("matte_mode", "associated") == "straight":
+        rgb = np.ones((H, W, 3), dtype=np.float32)
+    else:
+        rgb = np.repeat(cov[..., None], 3, axis=2)
+    out_f = np.dstack([rgb, cov])
+
+    if pix_fmt == "float":
+        arr = out_f.astype(np.float32)
+    elif pix_fmt == "uint16":
+        arr = (out_f * 65535.0 + 0.5).astype(np.uint16)
+    else:
+        arr = (out_f * 255.0 + 0.5).astype(np.uint8)
+
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    write_image(out_path, arr, W, H, 4, pix_fmt, colorspace="Linear")
+    return out_path
+
+
+def convert_mattes(in_path, settings, crypto_id, object_names):
+    """
+    Export mattes for the selected objects. Returns a list of output paths.
+
+    Combined writes one file for the union of the selection; otherwise each
+    object gets its own, which is what usually goes into a comp.
+    """
+    cryptos = {c["id"]: c for c in probe_cryptomattes(in_path)}
+    crypto = cryptos.get(crypto_id)
+    if crypto is None:
+        raise ValueError("no cryptomatte %r in this file" % crypto_id)
+    if crypto["incomplete"]:
+        raise ValueError("cryptomatte %r is unusable: %s"
+                         % (crypto["label"],
+                            "no manifest" if not crypto["objects"]
+                            else "no rank channels"))
+
+    # read the ranks once no matter how many mattes come out of them
+    pairs, W, H = read_crypto_ranks(in_path, crypto["ranks"])
+
+    def coverage(names):
+        targets = [crypto["objects"][n] for n in names if n in crypto["objects"]]
+        cov = np.zeros((H, W), dtype=np.float32)
+        for ids, weights in pairs:
+            hit = np.zeros((H, W), dtype=bool)
+            for t in targets:
+                hit |= (ids == t)
+            cov += np.where(hit, weights, 0.0)
+        return np.clip(cov, 0.0, 1.0)
+
+    written = []
+    if settings.get("matte_combine"):
+        out = matte_filename(in_path, crypto, "combined", settings, index=0)
+        written.append(write_matte(out, coverage(object_names), W, H, settings))
+    else:
+        for i, name in enumerate(object_names):
+            out = matte_filename(in_path, crypto, name, settings, index=i)
+            written.append(write_matte(out, coverage([name]), W, H, settings))
+    return written
 
 
 # ----------------------------------------------------------------------------

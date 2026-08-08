@@ -15,6 +15,7 @@ everything else guards an invariant that has already been violated once.
 import os
 import sys
 
+import json
 import numpy as np
 import pytest
 import OpenImageIO as oiio
@@ -421,6 +422,240 @@ def test_config_versions_actually_differ(patch_exr, tmp_path):
                                 suffix="_" + str(abs(hash(name)) % 10000)))
         seen[label] = tuple(int(v) for v in read_u8(out)[0, :, 0])
     assert len(set(seen.values())) > 1, "all configs produced identical output"
+
+
+# ---------------------------------------------------------------------------
+# Cryptomatte
+# ---------------------------------------------------------------------------
+
+# Hashes lifted from a real Blender 5.2 render's manifest. These are the
+# renderer's own values, so they check our MurmurHash3_32 against another
+# implementation rather than against itself. The first entry is deliberately
+# non-ASCII: object names come from the DCC and are arbitrary Unicode.
+BLENDER_HASHES = {
+    "☄ Aurora Shader Controller.004": "cbe3e51b",
+    "back_mountains_plane.004": "a6456e22",
+    "mountains_fill.004": "422164de",
+    "Snow Cliffs Mountain Mountains.009": "e13ba364",
+    "default_surface": "78d05529",
+    "default_volume": "b331280e",
+    "default_light": "fe269f93",
+    "default_background": "dba7ec85",
+    "Sun.Default.021": "133dbde9",
+    "Area.HDRI.019": "295e432c",
+}
+
+
+@pytest.mark.parametrize("name,expected", list(BLENDER_HASHES.items()))
+def test_murmur3_matches_blender(name, expected):
+    assert format(core.murmur3_32(name), "08x") == expected
+
+
+def test_hash_to_float_avoids_nan_and_inf():
+    """
+    The spec's exponent clamp. An all-ones or all-zeros exponent gives NaN, Inf
+    or a denormal - none of which survive the float equality that ID matching
+    depends on.
+    """
+    for h in (0x7F800000, 0xFF800000, 0x7FFFFFFF, 0x00000000, 0x000FFFFF):
+        v = core.hash_to_float(h)
+        assert not np.isnan(v) and not np.isinf(v)
+
+
+def _crypto_exr(path, layers=1, manifest_name="CryptoObject"):
+    """A spec-shaped cryptomatte: two ranks per layer, ID/coverage pairs."""
+    names, ids = ["sphere_A", "cube_B", "floor"], {}
+    for n in names:
+        ids[n] = core.name_to_id(n)
+    W = H = 8
+    chans, data = [], []
+    for li in range(layers):
+        base = "%s%02d" % (manifest_name, li)
+        chans += ["%s.%s" % (base, c) for c in "rgba"]
+        block = np.zeros((H, W, 4), np.float32)
+        if li == 0:
+            block[:4, :4] = [ids["sphere_A"], 1.0, 0.0, 0.0]
+            block[:4, 4:] = [ids["cube_B"], 0.6, ids["floor"], 0.4]
+            block[4:, :] = [ids["floor"], 1.0, 0.0, 0.0]
+        data.append(block)
+    arr = np.concatenate(data, axis=2)
+
+    spec = oiio.ImageSpec(W, H, arr.shape[2], "float")
+    spec.channelnames = tuple(chans)
+    spec.attribute("cryptomatte/abc1234/name", manifest_name)
+    spec.attribute("cryptomatte/abc1234/hash", "MurmurHash3_32")
+    spec.attribute("cryptomatte/abc1234/conversion", "uint32_to_float32")
+    spec.attribute("cryptomatte/abc1234/manifest", json.dumps(
+        {n: format(core.murmur3_32(n), "08x") for n in names}))
+    out = oiio.ImageOutput.create(path)
+    out.open(path, spec)
+    out.write_image(arr)
+    out.close()
+    return path
+
+
+def test_probe_finds_cryptomatte(tmp_path):
+    c = core.probe_cryptomattes(_crypto_exr(str(tmp_path / "c.exr")))
+    assert len(c) == 1
+    assert c[0]["label"] == "CryptoObject"
+    assert len(c[0]["objects"]) == 3
+    assert len(c[0]["ranks"]) == 2      # two ranks per layer
+    assert c[0]["incomplete"] is False
+
+
+def test_probe_strips_viewlayer_prefix(tmp_path):
+    """Blender names them ViewLayer.CryptoObject; the UI wants the short form."""
+    p = _crypto_exr(str(tmp_path / "v.exr"), manifest_name="ViewLayer.CryptoObject")
+    c = core.probe_cryptomattes(p)[0]
+    assert c["name"] == "ViewLayer.CryptoObject"
+    assert c["label"] == "CryptoObject"
+    assert len(c["ranks"]) == 2
+
+
+def test_multiple_rank_layers(tmp_path):
+    p = _crypto_exr(str(tmp_path / "m.exr"), layers=3)
+    assert len(core.probe_cryptomattes(p)[0]["ranks"]) == 6
+
+
+def test_extract_matte_coverage(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    cov, W, H = core.extract_matte(p, c, ["cube_B"])
+    assert cov.max() == pytest.approx(0.6)
+    cov2, _, _ = core.extract_matte(p, c, ["floor"])
+    # floor is a full half plus the 0.4 share of the mixed quadrant
+    assert cov2.max() == pytest.approx(1.0)
+    assert (cov2 > 0).sum() > (cov > 0).sum()
+
+
+def test_extract_matte_union(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    total, _, _ = core.extract_matte(p, c, ["sphere_A", "cube_B", "floor"])
+    assert np.allclose(total, 1.0), "every pixel is covered by exactly one set"
+
+
+def test_extract_matte_unknown_object(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    with pytest.raises(ValueError):
+        core.extract_matte(p, c, ["not_in_scene"])
+
+
+def test_coverage_is_clamped(tmp_path):
+    """
+    A single rank can exceed 1.0 - a Blender render reached 2.633, because the
+    pixel filter accumulates. Without the clamp the matte would blow past white.
+    """
+    W = H = 4
+    fid = core.name_to_id("thing")
+    arr = np.zeros((H, W, 4), np.float32)
+    arr[..., 0] = fid
+    arr[..., 1] = 2.633
+    path = str(tmp_path / "hot.exr")
+    spec = oiio.ImageSpec(W, H, 4, "float")
+    spec.channelnames = ("CryptoObject00.r", "CryptoObject00.g",
+                         "CryptoObject00.b", "CryptoObject00.a")
+    spec.attribute("cryptomatte/z/name", "CryptoObject")
+    spec.attribute("cryptomatte/z/manifest",
+                   json.dumps({"thing": format(core.murmur3_32("thing"), "08x")}))
+    o = oiio.ImageOutput.create(path)
+    o.open(path, spec)
+    o.write_image(arr)
+    o.close()
+    c = core.probe_cryptomattes(path)[0]
+    cov, _, _ = core.extract_matte(path, c, ["thing"])
+    assert cov.max() == 1.0
+
+
+def test_matte_is_white_silhouette(tmp_path):
+    """Fully covered pixels must be white, edges premultiplied white."""
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    out = core.convert_mattes(
+        p, {"out_dir": str(tmp_path), "format": "png", "bits": 16},
+        c["id"], ["floor"])[0]
+    px = read_u8(out).astype(np.float32) / 255.0
+    solid = px[..., 3] > 0.99
+    assert solid.any()
+    assert px[..., :3][solid].min() == pytest.approx(1.0, abs=0.01)
+
+
+def test_straight_mode_upgrades_to_tiff(tmp_path):
+    """
+    OIIO's PNG writer always associates alpha, so RGB 1.0 comes back as the
+    coverage and "straight" would silently equal "associated".
+    """
+    s = {"format": "png", "bits": 16, "matte_mode": "straight"}
+    assert core.resolve_matte_output(s)[0] == "tiff"
+    assert core.resolve_matte_output({"format": "png", "bits": 16})[0] == "png"
+
+
+def test_matte_never_jpeg(tmp_path):
+    """A matte without an alpha channel is not a matte."""
+    assert core.resolve_matte_output({"format": "jpeg", "bits": 8})[0] == "png"
+
+
+def test_straight_mode_keeps_rgb_white(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    out = core.convert_mattes(
+        p, {"out_dir": str(tmp_path), "format": "tiff", "bits": 16,
+            "matte_mode": "straight"}, c["id"], ["cube_B"])[0]
+    assert out.endswith(".tif")
+    i = oiio.ImageInput.open(out)
+    px = np.array(i.read_image(format="float"), np.float32).reshape(8, 8, 4)
+    i.close()
+    assert px[..., :3].min() == pytest.approx(1.0), "RGB should be pinned to white"
+    assert px[..., 3].max() == pytest.approx(0.6)
+
+
+def test_one_file_per_object_vs_combined(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    base = {"out_dir": str(tmp_path), "format": "png", "bits": 8}
+    many = core.convert_mattes(p, base, c["id"], ["sphere_A", "cube_B"])
+    assert len(many) == 2 and len(set(many)) == 2
+    one = core.convert_mattes(p, dict(base, matte_combine=True), c["id"],
+                              ["sphere_A", "cube_B"])
+    assert len(one) == 1
+
+
+def test_matte_filename_is_filesystem_safe(tmp_path):
+    c = {"label": "CryptoObject"}
+    s = {"out_dir": str(tmp_path), "format": "png"}
+    name = core.matte_filename("/r/shot.exr", c, "☄ Aurora / Ctrl.004", s, 0)
+    stem = os.path.basename(name)
+    assert "☄" not in stem and "/" not in stem[1:] and stem.endswith(".png")
+
+
+def test_unusable_cryptomatte_is_reported(tmp_path):
+    """
+    Redshift has been seen writing a three-channel 'Cryptomatte_' layer with no
+    rank numbering. That is not usable, and must say so rather than produce a
+    blank matte.
+    """
+    W = H = 4
+    path = str(tmp_path / "bad.exr")
+    spec = oiio.ImageSpec(W, H, 3, "float")
+    spec.channelnames = ("Cryptomatte_.red", "Cryptomatte_.green",
+                         "Cryptomatte_.blue")
+    spec.attribute("cryptomatte/q/name", "Cryptomatte_")
+    spec.attribute("cryptomatte/q/manifest", json.dumps({"a": "00000001"}))
+    o = oiio.ImageOutput.create(path)
+    o.open(path, spec)
+    o.write_image(np.zeros((H, W, 3), np.float32))
+    o.close()
+    c = core.probe_cryptomattes(path)[0]
+    assert c["incomplete"] is True
+    with pytest.raises(ValueError):
+        core.convert_mattes(path, {"out_dir": str(tmp_path)}, c["id"], ["a"])
+
+
+def test_crypto_layers_still_excluded_from_beauty():
+    """The v1.1 rule must survive: crypto is never a beauty candidate."""
+    for layer in ("CryptoObject00", "ViewLayer.CryptoMaterial00", "Cryptomatte_"):
+        assert core.score_layer(layer) < 0
 
 
 # ---------------------------------------------------------------------------

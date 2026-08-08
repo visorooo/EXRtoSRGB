@@ -161,6 +161,7 @@ function renderFiles() {
     row.onclick = () => {
       state.selected = i;
       renderFiles();
+      refreshCrypto();
       schedulePreview();
     };
     list.appendChild(row);
@@ -174,6 +175,7 @@ async function removeEntry(i) {
   }
   renderFiles();
   await refreshLayers();
+  await refreshCrypto();
   schedulePreview();
 }
 
@@ -280,6 +282,7 @@ window.onDone = (ok, fail, warned) => {
   state.converting = false;
   $('btn-convert').disabled = false;
   $('btn-cancel').disabled = true;
+  updateCryptoCount();
   const p = $('progress');
   p.classList.toggle('failed', fail > 0);
   p.classList.toggle('done', fail === 0);
@@ -297,12 +300,160 @@ window.onFilesChanged = async (entries) => {
   if (state.selected >= entries.length) state.selected = 0;
   renderFiles();
   await refreshLayers();
+  await refreshCrypto();
   schedulePreview();
 };
 
 window.onDragState = (on) => {
   $('files-panel').classList.toggle('dragging', !!on);
 };
+
+/* ---------------------------------------------------------------------------
+ * Cryptomatte
+ *
+ * Selection is held per cryptomatte type, so switching between CryptoObject and
+ * CryptoMaterial and back does not lose what was already ticked.
+ * ------------------------------------------------------------------------ */
+
+const crypto = { types: [], selected: new Map() };
+
+function currentCrypto() {
+  return crypto.types.find((t) => t.id === $('crypto-type').value) || null;
+}
+
+function selectionFor(id) {
+  if (!crypto.selected.has(id)) crypto.selected.set(id, new Set());
+  return crypto.selected.get(id);
+}
+
+async function refreshCrypto() {
+  const panel = $('crypto-panel');
+  crypto.types = [];
+  crypto.selected.clear();
+
+  if (!state.entries.length) {
+    panel.hidden = true;
+    return;
+  }
+  const r = await window.pywebview.api.cryptomattes(state.selected);
+  crypto.types = (r.types || []).filter((t) => !t.incomplete);
+
+  const unusable = (r.types || []).filter((t) => t.incomplete);
+  for (const t of unusable) {
+    log(`Cryptomatte “${t.label}” is unusable (no manifest or rank channels).`,
+        'warn');
+  }
+  if (!crypto.types.length) {
+    panel.hidden = true;
+    return;
+  }
+  const wasHidden = panel.hidden;
+  panel.hidden = false;
+  // A panel that appears below the fold may as well not exist; bring it into
+  // view the first time a file turns out to have cryptomattes.
+  if (wasHidden) {
+    requestAnimationFrame(() =>
+      panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }
+  fillSelect(
+    $('crypto-type'),
+    crypto.types.map((t) => ({ value: t.id, label: `${t.label} · ${t.objects.length}` }))
+  );
+  renderObjects();
+}
+
+function renderObjects() {
+  const box = $('crypto-objects');
+  const type = currentCrypto();
+  box.innerHTML = '';
+  if (!type) return;
+
+  const sel = selectionFor(type.id);
+  const needle = $('crypto-filter').value.trim().toLowerCase();
+  const shown = type.objects.filter(
+    (n) => !needle || n.toLowerCase().includes(needle));
+
+  if (!shown.length) {
+    box.innerHTML = '<div class="empty-msg">No objects match</div>';
+    updateCryptoCount();
+    return;
+  }
+  for (const name of shown) {
+    const label = document.createElement('label');
+    label.className = 'check';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = sel.has(name);
+    input.onchange = () => {
+      if (input.checked) sel.add(name);
+      else sel.delete(name);
+      updateCryptoCount();
+    };
+    const box_ = document.createElement('span');
+    box_.className = 'box';
+    const text = document.createElement('span');
+    text.textContent = name;      // may be arbitrary Unicode; never innerHTML
+    text.title = name;
+    label.append(input, box_, text);
+    box.appendChild(label);
+  }
+  updateCryptoCount();
+}
+
+function updateCryptoCount() {
+  const type = currentCrypto();
+  const n = type ? selectionFor(type.id).size : 0;
+  $('crypto-count').textContent = n ? `${n} selected` : '';
+  $('btn-mattes').disabled = n === 0;
+}
+
+function wireCrypto() {
+  $('crypto-type').onchange = renderObjects;
+  $('crypto-filter').oninput = renderObjects;
+
+  // Select all / clear act on what the filter is showing, which is what you
+  // expect after typing a name fragment.
+  $('crypto-all').onclick = () => {
+    const type = currentCrypto();
+    if (!type) return;
+    const sel = selectionFor(type.id);
+    const needle = $('crypto-filter').value.trim().toLowerCase();
+    type.objects
+      .filter((n) => !needle || n.toLowerCase().includes(needle))
+      .forEach((n) => sel.add(n));
+    renderObjects();
+  };
+  $('crypto-none').onclick = () => {
+    const type = currentCrypto();
+    if (type) selectionFor(type.id).clear();
+    renderObjects();
+  };
+
+  $('btn-mattes').onclick = async () => {
+    const type = currentCrypto();
+    if (!type) return;
+    const names = [...selectionFor(type.id)];
+    if (!names.length) return;
+
+    state.converting = true;
+    $('btn-convert').disabled = true;
+    $('btn-mattes').disabled = true;
+    $('btn-cancel').disabled = false;
+    $('progress').classList.remove('done', 'failed');
+    $('bar').style.width = '0%';
+    clearLog();
+    await window.pywebview.api.export_mattes(
+      state.selected,
+      {
+        ...settings(),
+        matte_mode: $('matte-mode').value,
+        matte_combine: $('matte-split').value === 'combined',
+      },
+      type.id,
+      names
+    );
+  };
+}
 
 /* ---------------------------------------------------------------------------
  * Colour option plumbing
@@ -464,6 +615,7 @@ function wire() {
       state.selected = Math.min(
         state.entries.length - 1, Math.max(0, state.selected + d));
       renderFiles();
+      refreshCrypto();
       schedulePreview();
     }
   });
@@ -505,6 +657,7 @@ function applyDefaults() {
 window.addEventListener('pywebviewready', async () => {
   wire();
   wireDrag();
+  wireCrypto();
   applyDefaults();
   syncFormat();
   // Swap the native <select>s for the animated ones. The originals stay in the
@@ -516,6 +669,7 @@ window.addEventListener('pywebviewready', async () => {
   await reloadConfigList(init.config);
   state.ready = true;
   await refreshLayers();
+  await refreshCrypto();
   renderFiles();
   log('Ready. ' + init.hint, 'dim');
 });

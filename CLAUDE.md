@@ -173,6 +173,35 @@ beside its `.exr` with the same stem. All four live in `applyDefaults()` in
 only as a downloadable `config.ocio`, so it cannot be compiled in. That is what the
 `Custom config.ocio…` entry is for; don't try to add ACES 1.2 to `ACES_CONFIGS`.
 
+## Cryptomatte
+
+`probe_cryptomattes` / `extract_matte` / `convert_mattes`. Verified against a real
+Blender 5.2 render (2160², 80 channels, two crypto types); ten of that file's own
+manifest hashes are known-answer tests, so our `murmur3_32` is checked against
+another implementation rather than itself. One of them is non-ASCII on purpose —
+object names come from the DCC and are arbitrary Unicode, which is also why
+`matte_filename` sanitises and why the object list uses `textContent`.
+
+Things real files do that synthetic ones do not:
+
+- **A single rank's coverage can exceed 1.0** — the Blender file reached 2.633,
+  because the pixel filter accumulates. The clamp in `extract_matte` is required,
+  not defensive.
+- **Mattes do not sum to 1.0.** Only 27% of pixels did in that render: rank count
+  is capped by the render's Levels setting, so overlap beyond that is simply not
+  in the file. The synthetic fixture does sum to 1.0 and asserts it; do not extend
+  that assertion to real files.
+- **Channel layers carry the view layer prefix** — `ViewLayer.CryptoObject00.r`,
+  lowercase components, while the sibling AOVs use uppercase. `label` strips the
+  prefix for display.
+
+**OIIO's PNG writer always associates alpha.** Writing RGB 1.0 with a coverage
+alpha reads back as RGB = coverage, and no `oiio:UnassociatedAlpha` or
+`png:unassociatedAlpha` attribute changes it (measured). TIFF preserves it by
+default — and *inverts* if that attribute is set. So `resolve_matte_output` forces
+TIFF for `matte_mode="straight"` rather than writing a file that silently is not
+what was asked for.
+
 ## Scene-linear output
 
 `transfer="linear"` is a different job from everything else here: it moves data

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-EXR -> sRGB  ·  ACES linear -> display-ready PNG / JPEG
+EXR -> sRGB  ·  ACES linear -> PNG / JPEG / TIFF
 
 A batch converter for renders out of Blender Cycles, C4D Octane and C4D Redshift.
 Colour is handled with OpenColorIO's built-in ACES configs - the same engine the
 renderers use - so output matches the viewport instead of a naive gamma guess.
+It also writes scene-linear 32-bit TIFF, and exports cryptomatte object mattes.
 
 The UI is HTML/CSS rendered in a native window (pywebview -> WebView2 on Windows,
 WebKit elsewhere). Python remains the application; the web layer is only the
@@ -29,7 +30,7 @@ from webview.dom import DOMEventHandler
 import core
 
 APP_NAME = "EXR → sRGB"
-VERSION = "2.0"
+VERSION = "2.1"
 
 # _MEIPASS only exists in a frozen build; from source this is the repo folder.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -254,6 +255,71 @@ class Api:
         except Exception as e:
             return {"layers": [], "error": str(e)}
 
+    # -- cryptomatte ------------------------------------------------------
+
+    def cryptomattes(self, index):
+        """List the cryptomatte types in the selected entry, with their objects."""
+        paths = self._entry_paths(index)
+        if not paths:
+            return {"types": []}
+        try:
+            found = core.probe_cryptomattes(paths[0])
+        except Exception as e:
+            return {"types": [], "error": str(e)}
+        return {"types": [{
+            "id": c["id"],
+            "label": c["label"],
+            "incomplete": c["incomplete"],
+            "ranks": len(c["ranks"]),
+            # sorted for a stable list; the manifest order is arbitrary
+            "objects": sorted(c["objects"]),
+        } for c in found]}
+
+    def export_mattes(self, index, s, crypto_id, object_names):
+        """Export the selected mattes. Runs on a worker like a conversion does."""
+        paths = self._entry_paths(index)
+        if not paths:
+            self._js("onLog", "Nothing selected.", "warn")
+            return False
+        try:
+            settings = self._settings(s)
+        except Exception as e:
+            self._js("onLog", "Bad settings: %s" % e, "err")
+            return False
+        settings["matte_mode"] = s.get("matte_mode", "associated")
+        settings["matte_combine"] = bool(s.get("matte_combine"))
+
+        fmt, _, bits = core.resolve_matte_output(settings)
+        self._js("onLog", "mattes · %d object(s) · %s %d-bit · %s"
+                 % (len(object_names), fmt.upper(), bits,
+                    "combined" if settings["matte_combine"] else "one per object"),
+                 "dim")
+        self.cancel_flag.clear()
+        self.worker = threading.Thread(
+            target=self._run_mattes,
+            args=(paths, settings, crypto_id, list(object_names)), daemon=True)
+        self.worker.start()
+        return True
+
+    def _run_mattes(self, paths, settings, crypto_id, object_names):
+        total = len(paths)
+        ok = fail = 0
+        for i, path in enumerate(paths):
+            if self.cancel_flag.is_set():
+                self._js("onLog", "Cancelled.", "warn")
+                break
+            try:
+                for out in core.convert_mattes(path, settings, crypto_id,
+                                               object_names):
+                    self._js("onLog", "  OK    " + os.path.basename(out), "ok")
+                    ok += 1
+            except Exception as e:
+                fail += 1
+                self._js("onLog", "  FAIL  %s  ->  %s"
+                         % (os.path.basename(path), e), "err")
+            self._js("onProgress", i + 1, total)
+        self._js("onDone", ok, fail, 0)
+
     # -- files ------------------------------------------------------------
 
     def add_files_dialog(self):
@@ -438,7 +504,7 @@ def main():
         os.path.join(UI_DIR, "index.html"),
         js_api=api,
         width=1180,
-        height=880,
+        height=920,
         min_size=(940, 720),
         background_color=bg,
         text_select=False,

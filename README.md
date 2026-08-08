@@ -179,6 +179,40 @@ exposure and saturation.
 
 ---
 
+## Cryptomatte
+
+If the selected file has cryptomattes, a **Cryptomatte** panel appears. It reads
+the manifest out of the EXR metadata and lists every object or material in the
+render; tick the ones you want and hit **Export mattes**.
+
+- **Type** — Blender writes `CryptoObject` and `CryptoMaterial`; Redshift and
+  others add their own. Each is listed with its object count, and selections are
+  remembered per type while you switch between them.
+- **Filter** — type a fragment to narrow a long list. **Select all** acts on
+  what the filter is showing, not the whole scene.
+- **One file per object** or **Combine into one** — the union of everything
+  ticked.
+
+Mattes never go through the display transform. Coverage is data, not colour, and
+running it through an ACES view would be as wrong as tone-mapping a normal pass.
+Files come out tagged `colorspace=Linear`.
+
+**White silhouette (premultiplied)** is the default: coverage lands in RGB *and*
+alpha, so a fully covered pixel is white, a soft edge is correctly premultiplied
+white, and the matte is usable even in something that ignores alpha. **Flat white
+RGB** pins RGB to 1.0 and leaves the shape only in alpha — that one needs TIFF,
+because OIIO's PNG writer always associates alpha and would collapse the two
+modes into the same file.
+
+A note on accuracy: cryptomatte stores a fixed number of *ranks* per pixel (how
+many overlapping objects it can remember), set by the **Levels** value at render
+time. Where more objects overlap than there are ranks, coverage is genuinely
+missing from the file and no tool can recover it. Coverage is also clamped to 1.0
+on the way out, because a single rank can legitimately exceed it — a Blender
+render measured here reached 2.633, since the pixel filter accumulates.
+
+---
+
 ## Sanity check (these are correct ACES values)
 
 | ACEScg input | ACES 1.3 → sRGB 8-bit | ACES 2.0 → sRGB 8-bit |
