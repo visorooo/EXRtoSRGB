@@ -195,6 +195,17 @@ Things real files do that synthetic ones do not:
   lowercase components, while the sibling AOVs use uppercase. `label` strips the
   prefix for display.
 
+**`[hidden]` loses to any class that sets `display`.** The attribute only gets
+`display: none` from the UA stylesheet, so `.settings` (grid) and `.crypto-body`
+(flex) kept both tab bodies laid out at once — which is what put a scrollbar in
+the left column. `app.css` sets `[hidden] { display: none !important }` for this.
+`el.hidden` still reports `true` in that state, so the attribute is not evidence
+the element is gone; check the computed height.
+
+**ID planes must be subsampled, never filtered.** Averaging two IDs produces a
+third that matches no object in the manifest, so `_subsample` takes nearest
+neighbours. A test asserts the preview invents no IDs.
+
 **OIIO's PNG writer always associates alpha.** Writing RGB 1.0 with a coverage
 alpha reads back as RGB = coverage, and no `oiio:UnassociatedAlpha` or
 `png:unassociatedAlpha` attribute changes it (measured). TIFF preserves it by

@@ -56,6 +56,17 @@
   box-sizing: border-box;
 }
 
+/*
+ * The [hidden] attribute only gets `display: none` from the UA stylesheet, so
+ * any class that sets display - .settings is grid, .crypto-body is flex - wins
+ * on specificity and the element stays visible. That is what kept both tab
+ * bodies laid out at once, and with them the scrollbar this panel was meant to
+ * remove.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -783,6 +794,81 @@ input[type='text']:focus {
 .check input:focus-visible + .box {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+ * Tabs and segmented control
+ * ------------------------------------------------------------------------ */
+
+.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 4px 2px;
+  margin-right: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tab:hover:not(:disabled) {
+  background: transparent;
+  color: var(--ink-soft);
+  border-color: transparent;
+  border-bottom-color: var(--line-strong);
+}
+
+.tab.is-active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* the underline is the state; a press bounce would fight it */
+.tab:active:not(:disabled) {
+  transform: none;
+}
+
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.seg button {
+  padding: 3px 9px;
+  font-size: 11px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  border-radius: 4px;
+}
+
+.seg button:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--ink-soft);
+  border-color: transparent;
+}
+
+.seg button.is-active {
+  background: var(--line-strong);
+  color: var(--ink);
+}
+
+.pick-hint {
+  padding: 7px 14px 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* Ctrl held over the ID view: the pointer says the click will do something. */
+.preview-box.pickable img {
+  cursor: crosshair;
 }
 
 /* --------------------------------------------------------------------------

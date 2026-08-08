@@ -98,6 +98,8 @@ class Api:
         self.cancel_flag = threading.Event()
         self.worker = None
         self.custom_configs = {}  # label -> path
+        self._pick_state = None   # subsampled ID plane for ctrl-click picking
+        self._pick_key = None
 
     # -- helpers ----------------------------------------------------------
 
@@ -274,6 +276,41 @@ class Api:
             # sorted for a stable list; the manifest order is arbitrary
             "objects": sorted(c["objects"]),
         } for c in found]}
+
+    def crypto_preview(self, index, crypto_id, selected):
+        """
+        Render the cryptomatte as coloured IDs, the way Nuke and AE show it.
+
+        The subsampled ID plane is kept here so a later ctrl-click resolves by
+        array lookup instead of re-reading a 466 MB file.
+        """
+        paths = self._entry_paths(index)
+        if not paths:
+            return {"error": "nothing selected"}
+        try:
+            crypto = next(c for c in core.probe_cryptomattes(paths[0])
+                          if c["id"] == crypto_id)
+            uri, state = core.crypto_preview(paths[0], crypto, max_px=512,
+                                             selected=list(selected or []))
+            self._pick_state = state
+            self._pick_key = (paths[0], crypto_id)
+            return {"uri": uri, "width": state["full_width"],
+                    "height": state["full_height"]}
+        except StopIteration:
+            return {"error": "no such cryptomatte"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def pick_object(self, index, crypto_id, u, v):
+        """Resolve a normalised click on the ID preview to an object name."""
+        paths = self._entry_paths(index)
+        if not paths:
+            return {"name": None}
+        if getattr(self, "_pick_key", None) != (paths[0], crypto_id):
+            # preview was for a different file; rebuild the lookup first
+            self.crypto_preview(index, crypto_id, [])
+        return {"name": core.object_at(getattr(self, "_pick_state", None),
+                                       float(u), float(v))}
 
     def export_mattes(self, index, s, crypto_id, object_names):
         """Export the selected mattes. Runs on a worker like a conversion does."""

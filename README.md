@@ -181,9 +181,20 @@ exposure and saturation.
 
 ## Cryptomatte
 
-If the selected file has cryptomattes, a **Cryptomatte** panel appears. It reads
-the manifest out of the EXR metadata and lists every object or material in the
-render; tick the ones you want and hit **Export mattes**.
+If the selected file has cryptomattes, a **Cryptomatte** tab appears next to
+Output settings. It reads the manifest out of the EXR metadata and lists every
+object or material in the render; tick the ones you want and hit **Export mattes**.
+
+**The preview switches to coloured IDs** — the view Nuke and AE show — using the
+**Render / IDs** toggle above it, or automatically when you open the tab. Each
+object gets a stable colour derived from its hash, and ranks are composited so
+edges blend rather than alias.
+
+**Ctrl-click the ID view to select objects directly.** Clicking an object toggles
+it, ticked objects stay lit and everything else dims, so you can see the selection
+build up on the image instead of hunting through the list. Picking costs nothing —
+it reads the ID plane the preview was already built from rather than touching the
+file again.
 
 - **Type** — Blender writes `CryptoObject` and `CryptoMaterial`; Redshift and
   others add their own. Each is listed with its object count, and selections are

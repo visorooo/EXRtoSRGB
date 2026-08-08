@@ -226,6 +226,23 @@ async function renderPreview() {
   const token = ++previewToken;
   setPreviewLoading();
   try {
+    if (crypto.mode === 'crypto') {
+      const type = currentCrypto();
+      if (!type) return;
+      const c = await window.pywebview.api.crypto_preview(
+        state.selected, type.id, [...selectionFor(type.id)]);
+      if (token !== previewToken) return;
+      if (c.error) {
+        $('preview-box').innerHTML =
+          `<div class="placeholder">${escapeHtml(c.error)}</div>`;
+        return;
+      }
+      setPreview(c.uri);
+      $('preview-layer').textContent = type.label;
+      $('preview-dims').textContent = `${c.width} × ${c.height}`;
+      $('preview-note').textContent = '';
+      return;
+    }
     const r = await window.pywebview.api.preview(state.selected, settings());
     if (token !== previewToken) return; // a newer request won
     if (r.error) {
@@ -315,7 +332,29 @@ window.onDragState = (on) => {
  * CryptoMaterial and back does not lose what was already ticked.
  * ------------------------------------------------------------------------ */
 
-const crypto = { types: [], selected: new Map() };
+const crypto = { types: [], selected: new Map(), mode: 'beauty' };
+
+/* Output and Cryptomatte are tabs on one panel; stacked they overflowed. */
+function showTab(which) {
+  const isCrypto = which === 'crypto';
+  $('tab-output').classList.toggle('is-active', !isCrypto);
+  $('tab-crypto').classList.toggle('is-active', isCrypto);
+  $('body-output').hidden = isCrypto;
+  $('body-crypto').hidden = !isCrypto;
+  // The ID view is only meaningful beside the object list, so the two follow
+  // each other rather than being two things to remember to switch.
+  setPreviewMode(isCrypto ? 'crypto' : 'beauty');
+}
+
+function setPreviewMode(mode) {
+  if (mode === 'crypto' && !crypto.types.length) mode = 'beauty';
+  crypto.mode = mode;
+  for (const b of $('pv-modes').querySelectorAll('button')) {
+    b.classList.toggle('is-active', b.dataset.mode === mode);
+  }
+  $('pick-hint').hidden = mode !== 'crypto';
+  schedulePreview();
+}
 
 function currentCrypto() {
   return crypto.types.find((t) => t.id === $('crypto-type').value) || null;
@@ -327,12 +366,14 @@ function selectionFor(id) {
 }
 
 async function refreshCrypto() {
-  const panel = $('crypto-panel');
+  const panel = $('tab-crypto');
   crypto.types = [];
   crypto.selected.clear();
 
   if (!state.entries.length) {
     panel.hidden = true;
+    if (crypto.mode === 'crypto') showTab('output');
+    $('pv-modes').hidden = true;
     return;
   }
   const r = await window.pywebview.api.cryptomattes(state.selected);
@@ -345,16 +386,12 @@ async function refreshCrypto() {
   }
   if (!crypto.types.length) {
     panel.hidden = true;
+    $('pv-modes').hidden = true;
+    if (crypto.mode === 'crypto') showTab('output');
     return;
   }
-  const wasHidden = panel.hidden;
+  $('pv-modes').hidden = false;
   panel.hidden = false;
-  // A panel that appears below the fold may as well not exist; bring it into
-  // view the first time a file turns out to have cryptomattes.
-  if (wasHidden) {
-    requestAnimationFrame(() =>
-      panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
-  }
   fillSelect(
     $('crypto-type'),
     crypto.types.map((t) => ({ value: t.id, label: `${t.label} · ${t.objects.length}` }))
@@ -388,6 +425,7 @@ function renderObjects() {
       if (input.checked) sel.add(name);
       else sel.delete(name);
       updateCryptoCount();
+      if (crypto.mode === 'crypto') schedulePreview();
     };
     const box_ = document.createElement('span');
     box_.className = 'box';
@@ -407,8 +445,59 @@ function updateCryptoCount() {
   $('btn-mattes').disabled = n === 0;
 }
 
+/*
+ * Ctrl-click the ID view to toggle the object under the cursor.
+ *
+ * The click is converted to a coordinate in the *image*, not the box: the
+ * preview is object-fit:contain, so there are letterbox bands that belong to no
+ * pixel. getBoundingClientRect on the <img> already excludes them.
+ */
+function wirePicking() {
+  const box = $('preview-box');
+
+  const armed = (e) => crypto.mode === 'crypto' && (e.ctrlKey || e.metaKey);
+  const update = (e) => box.classList.toggle('pickable', armed(e));
+  document.addEventListener('keydown', update);
+  document.addEventListener('keyup', update);
+  box.addEventListener('mousemove', update);
+
+  box.addEventListener('click', async (e) => {
+    if (!armed(e)) return;
+    const img = box.querySelector('img');
+    const type = currentCrypto();
+    if (!img || !type) return;
+
+    const r = img.getBoundingClientRect();
+    const u = (e.clientX - r.left) / r.width;
+    const v = (e.clientY - r.top) / r.height;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+
+    const res = await window.pywebview.api.pick_object(
+      state.selected, type.id, u, v);
+    if (!res.name) {
+      log('Nothing there — that pixel has no object.', 'dim');
+      return;
+    }
+    const sel = selectionFor(type.id);
+    if (sel.has(res.name)) {
+      sel.delete(res.name);
+      log(`− ${res.name}`, 'dim');
+    } else {
+      sel.add(res.name);
+      log(`+ ${res.name}`, 'ok');
+    }
+    renderObjects();
+    schedulePreview();
+  });
+}
+
 function wireCrypto() {
-  $('crypto-type').onchange = renderObjects;
+  $('tab-output').onclick = () => showTab('output');
+  $('tab-crypto').onclick = () => showTab('crypto');
+  for (const b of $('pv-modes').querySelectorAll('button')) {
+    b.onclick = () => setPreviewMode(b.dataset.mode);
+  }
+  $('crypto-type').onchange = () => { renderObjects(); schedulePreview(); };
   $('crypto-filter').oninput = renderObjects;
 
   // Select all / clear act on what the filter is showing, which is what you
@@ -422,11 +511,13 @@ function wireCrypto() {
       .filter((n) => !needle || n.toLowerCase().includes(needle))
       .forEach((n) => sel.add(n));
     renderObjects();
+    if (crypto.mode === 'crypto') schedulePreview();
   };
   $('crypto-none').onclick = () => {
     const type = currentCrypto();
     if (type) selectionFor(type.id).clear();
     renderObjects();
+    if (crypto.mode === 'crypto') schedulePreview();
   };
 
   $('btn-mattes').onclick = async () => {
@@ -658,6 +749,7 @@ window.addEventListener('pywebviewready', async () => {
   wire();
   wireDrag();
   wireCrypto();
+  wirePicking();
   applyDefaults();
   syncFormat();
   // Swap the native <select>s for the animated ones. The originals stay in the

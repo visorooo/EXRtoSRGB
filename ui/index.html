@@ -78,11 +78,19 @@
             <div class="filelist" id="filelist"></div>
           </section>
 
+          <!--
+            Output and Cryptomatte share one panel as tabs. Stacked, the two
+            overflowed the column and introduced a scrollbar; only one of them
+            is ever being used at a time anyway.
+          -->
           <section class="panel">
             <div class="panel-head">
-              <span class="panel-title">Output settings</span>
+              <button class="tab is-active" id="tab-output">Output settings</button>
+              <button class="tab" id="tab-crypto" hidden>Cryptomatte</button>
+              <span class="spacer"></span>
+              <span class="sub" id="crypto-count"></span>
             </div>
-            <div class="settings wide">
+            <div class="settings wide" id="body-output">
               <div class="field span2">
                 <label class="lbl" for="config">OCIO configuration</label>
                 <select autocomplete="off" id="config"></select>
@@ -158,19 +166,8 @@
                 </label>
               </div>
             </div>
-          </section>
 
-          <!--
-            Only shown when the selected file actually has cryptomattes, so
-            files without them are not cluttered by a dead panel.
-          -->
-          <section class="panel" id="crypto-panel" hidden>
-            <div class="panel-head">
-              <span class="panel-title">Cryptomatte</span>
-              <span class="spacer"></span>
-              <span class="sub" id="crypto-count"></span>
-            </div>
-            <div class="crypto-body">
+            <div class="crypto-body" id="body-crypto" hidden>
               <div class="crypto-row">
                 <select autocomplete="off" id="crypto-type"></select>
                 <input
@@ -207,12 +204,20 @@
             <div class="panel-head">
               <span class="panel-title">Preview</span>
               <span class="spacer"></span>
+              <!-- swaps the preview between the render and coloured IDs -->
+              <div class="seg" id="pv-modes" hidden>
+                <button class="is-active" data-mode="beauty">Render</button>
+                <button data-mode="crypto">IDs</button>
+              </div>
               <button class="ghost" id="btn-refresh" title="Refresh preview">
                 ↻
               </button>
             </div>
             <div class="preview-box" id="preview-box">
               <div class="placeholder">Add a file to preview the conversion</div>
+            </div>
+            <div class="pick-hint" id="pick-hint" hidden>
+              Ctrl-click the image to select objects
             </div>
             <div class="preview-meta">
               <span class="layer" id="preview-layer"></span>

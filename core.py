@@ -748,6 +748,113 @@ def resolve_matte_output(settings):
     return fmt, pix_fmt, bits
 
 
+def id_colour(float_id):
+    """
+    A stable pseudo-random colour per ID, the way Nuke and AE show cryptomattes.
+
+    The hash is already well distributed, so its bits are reused directly as
+    hue/saturation/value rather than hashed again. Saturation and value are kept
+    in the top of their range so neighbouring objects stay distinguishable and
+    nothing lands on near-black.
+    """
+    if float_id == 0.0:
+        return (0.0, 0.0, 0.0)
+    h = struct.unpack("<I", struct.pack("<f", np.float32(float_id)))[0]
+    hue = (h & 0xFFFF) / 65535.0
+    sat = 0.55 + ((h >> 16) & 0xFF) / 255.0 * 0.45
+    val = 0.65 + ((h >> 24) & 0xFF) / 255.0 * 0.35
+
+    i = int(hue * 6.0) % 6
+    f = hue * 6.0 - int(hue * 6.0)
+    p, q, t = val * (1 - sat), val * (1 - f * sat), val * (1 - (1 - f) * sat)
+    return [(val, t, p), (q, val, p), (p, val, t),
+            (p, q, val), (t, p, val), (val, p, q)][i]
+
+
+def _subsample(arr, factor):
+    """
+    Nearest-neighbour, never averaged.
+
+    Averaging two IDs produces a third that matches no object in the manifest,
+    so ID planes must be sampled, not filtered. Coverage is sampled alongside
+    them so the two stay aligned.
+    """
+    return arr[::factor, ::factor] if factor > 1 else arr
+
+
+def crypto_preview(path, crypto, max_px=512, selected=(), dim_unselected=True):
+    """
+    Render the cryptomatte as coloured IDs, and return what a click needs.
+
+    Returns (data-uri, state) where state carries the subsampled top-rank ID
+    plane so a later click resolves to an object without re-reading the file.
+
+    No display transform: these are IDs, not colour.
+    """
+    pairs, W, H = read_crypto_ranks(path, crypto["ranks"])
+    factor = max(1, -(-max(W, H) // max_px))
+    ids0 = np.ascontiguousarray(_subsample(pairs[0][0], factor))
+    h, w = ids0.shape
+
+    rgb = np.zeros((h, w, 3), dtype=np.float32)
+    total = np.zeros((h, w), dtype=np.float32)
+    lookup = {}
+    for name, fid in crypto["objects"].items():
+        lookup[fid] = name
+    sel_ids = {crypto["objects"][n] for n in selected if n in crypto["objects"]}
+
+    # Composite every rank so edges blend between the objects that share them,
+    # which is what makes the picture readable rather than aliased.
+    for ids, cov in pairs:
+        ids_s = _subsample(ids, factor)
+        cov_s = np.clip(_subsample(cov, factor), 0.0, 1.0)
+        for fid in np.unique(ids_s):
+            if fid == 0.0:
+                continue
+            mask = ids_s == fid
+            if not mask.any():
+                continue
+            c = id_colour(float(fid))
+            if dim_unselected and sel_ids and fid not in sel_ids:
+                c = tuple(v * 0.18 for v in c)
+            weight = np.where(mask, cov_s, 0.0)
+            rgb += weight[..., None] * np.array(c, dtype=np.float32)
+            total += weight
+
+    alpha = np.clip(total, 0.0, 1.0)
+    arr = (np.clip(np.dstack([rgb, alpha]), 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+
+    fd, tmp_path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        write_image(tmp_path, arr, w, h, 4, "uint8", colorspace="Linear")
+        with open(tmp_path, "rb") as fh:
+            data = fh.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    state = {"ids": ids0, "width": w, "height": h,
+             "full_width": W, "full_height": H, "lookup": lookup}
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii"), state
+
+
+def object_at(state, u, v):
+    """
+    Resolve a normalised click (0..1) to an object name, or None.
+
+    Works off the subsampled plane the preview was built from, so picking costs
+    nothing beyond an array index - the file is not touched again.
+    """
+    if not state:
+        return None
+    x = min(state["width"] - 1, max(0, int(u * state["width"])))
+    y = min(state["height"] - 1, max(0, int(v * state["height"])))
+    return state["lookup"].get(float(state["ids"][y, x]))
+
+
 def matte_filename(in_path, crypto, object_name, settings, index=None):
     """A filesystem-safe name per matte, since object names are arbitrary."""
     out_dir = settings.get("out_dir") or os.path.dirname(in_path)

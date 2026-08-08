@@ -652,6 +652,57 @@ def test_unusable_cryptomatte_is_reported(tmp_path):
         core.convert_mattes(path, {"out_dir": str(tmp_path)}, c["id"], ["a"])
 
 
+def test_id_colours_are_distinct_and_stable(tmp_path):
+    """Neighbouring objects must not come out the same colour."""
+    names = ["sphere_A", "cube_B", "floor", "Sun.Default.021", "Area.HDRI.019"]
+    cols = [core.id_colour(core.name_to_id(n)) for n in names]
+    assert len(set(cols)) == len(names)
+    # stable across calls, or the preview would flicker between renders
+    assert cols == [core.id_colour(core.name_to_id(n)) for n in names]
+    # nothing near-black, which would read as background
+    assert all(max(c) > 0.5 for c in cols)
+    assert core.id_colour(0.0) == (0.0, 0.0, 0.0)
+
+
+def test_crypto_preview_renders_and_picks(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    uri, state = core.crypto_preview(p, c, max_px=64)
+    assert uri.startswith("data:image/png;base64,")
+    # the fixture puts sphere_A top-left, floor across the bottom half
+    assert core.object_at(state, 0.2, 0.2) == "sphere_A"
+    assert core.object_at(state, 0.5, 0.9) == "floor"
+
+
+def test_preview_downsampling_never_invents_ids(tmp_path):
+    """
+    Averaging two IDs yields a third that matches no object. ID planes have to
+    be sampled, not filtered - this is why _subsample exists.
+    """
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    _, state = core.crypto_preview(p, c, max_px=4)   # forces real downsampling
+    valid = set(c["objects"].values()) | {0.0}
+    assert all(float(v) in valid for v in np.unique(state["ids"]))
+
+
+def test_object_at_out_of_range_is_safe(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    _, state = core.crypto_preview(p, c, max_px=32)
+    for u, v in ((-1.0, 0.5), (2.0, 0.5), (0.5, -3.0), (0.5, 9.9)):
+        core.object_at(state, u, v)      # must not raise
+    assert core.object_at(None, 0.5, 0.5) is None
+
+
+def test_selection_dims_the_rest(tmp_path):
+    p = _crypto_exr(str(tmp_path / "c.exr"))
+    c = core.probe_cryptomattes(p)[0]
+    plain, _ = core.crypto_preview(p, c, max_px=32)
+    dimmed, _ = core.crypto_preview(p, c, max_px=32, selected=["floor"])
+    assert plain != dimmed
+
+
 def test_crypto_layers_still_excluded_from_beauty():
     """The v1.1 rule must survive: crypto is never a beauty candidate."""
     for layer in ("CryptoObject00", "ViewLayer.CryptoMaterial00", "Cryptomatte_"):

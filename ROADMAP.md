@@ -106,6 +106,25 @@ Results are reported in submission order rather than completion order, so the lo
 still reads like the file list, and a test asserts threaded output is pixel-identical
 to serial.
 
+**Coloured cryptomatte view, with ctrl-click picking.** The preview switches
+between the render and the Nuke/AE-style coloured ID view. Ctrl-clicking an object
+toggles it, selected objects stay lit while the rest dim, and picking is free — it
+reads the ID plane the preview was already built from rather than touching the
+466 MB file again.
+
+Two things had to be right. **ID planes are subsampled, never filtered**: averaging
+two IDs produces a third that matches no object, so the preview would invent
+objects that do not exist. And the click is measured against the `<img>` rect, not
+the box, because `object-fit: contain` leaves letterbox bands that belong to no
+pixel.
+
+**Output and Cryptomatte became tabs.** Stacked, they overflowed the column. The
+actual cause of the scrollbar turned out to be subtler than the panel count:
+`[hidden]` only gets `display: none` from the UA stylesheet, so `.settings` (grid)
+and `.crypto-body` (flex) beat it on specificity and *both* bodies stayed laid out.
+`el.hidden` still reported `true` throughout, which is why it looked like a sizing
+problem rather than a visibility one.
+
 **Cryptomatte matte export.** The manifest is read out of EXR metadata and every
 object or material listed for selection; ticked objects export as white
 silhouettes with alpha, one file each or combined.
@@ -148,35 +167,62 @@ source layer, values above 1.0 included.
 
 ## V3
 
-### 1. EXR viewer *(the interesting one)*
+### 1. EXR viewer — next up
 
-Double-click an `.exr` and see it, correctly. tev is the closest existing thing but
-has no OCIO, so it cannot show an ACES render the way the renderer meant it —
-which is the entire problem this repo already solves.
+Double-click an `.exr` and see it, correctly. **[tev](https://github.com/Tom94/tev)**
+is the reference for what good looks like here, and it is worth being precise about
+what to take from it and what not to.
 
-Most of it already exists. `core.read_layer` does fast partial-channel reads,
-`group_layers` handles AOVs, `apply_transform` is the colour pipeline, and the
-pywebview shell is built. A viewer is roughly:
+What tev gets right and should be matched:
+
+- **Instant.** It opens huge EXRs fast and stays interactive while panning and
+  zooming. Its speed comes from doing the display transform on the GPU, per frame,
+  rather than re-processing pixels on the CPU.
+- **The pixel probe.** Values under the cursor, per channel, in the numbers that
+  actually matter. This is the single feature people tolerate the rest of its UI
+  for.
+- **Channel and layer switching** that is immediate, and **A/B comparison** between
+  images with difference modes.
+- **It never guesses.** Nothing is hidden behind an auto-detect that might be wrong.
+
+Where it leaves a gap, which is the reason to build at all:
+
+- **No OpenColorIO.** tev has its own tone-mapping controls but cannot apply an
+  ACES view transform, so it cannot show an ACES render the way the renderer meant
+  it. That is exactly the problem `core.py` already solves.
+- **No cryptomatte.** The coloured ID view and ctrl-click picking already built here
+  belong in a viewer far more than in a converter.
+
+Most of the plumbing exists: `read_layer` does fast partial-channel reads,
+`group_layers` handles AOVs, `apply_transform` is the colour pipeline,
+`crypto_preview` and `object_at` are done, and the pywebview shell is built.
+
+Still to do:
 
 - **File association** for `.exr`, launching with a path argument. Needs a per-user
   registry write, so it belongs behind an explicit "Set as default EXR viewer"
   button rather than an installer side effect.
 - **Zoom / pan** on a canvas, 1:1 and fit.
-- **Exposure and gamma** above the ACES transform — the two controls anyone
-  reviewing a render reaches for first.
-- **Layer and channel switching**, including isolating R / G / B / A. The layer
-  work is done; channel isolation is a few lines.
-- **Pixel probe** showing linear scene values *and* display values under the
-  cursor. This is the thing tev is genuinely good at and the reason people tolerate
-  its UI.
-- **Sequence playback** using the grouping that already exists.
+- **Exposure and gamma** above the ACES transform — the first two controls anyone
+  reviewing a render reaches for.
+- **Channel isolation** — R / G / B / A on their own.
+- **Pixel probe** showing linear scene values *and* display values.
+- **Sequence playback**, which is item 2 below and shares its cache.
 
-The honest risk: a viewer is a *latency* problem where the converter is a
-throughput one. Every interaction re-runs the transform, and a 4K EXR through OCIO
-on CPU is not instantly interactive. Two ways out — cache the linear layer in
-memory and re-run only the display transform on each change (easy, gets most of the
-way), or move the transform to the GPU via OCIO's GPU path and a WebGL canvas
-(fast, considerably more work). Start with the first.
+**The honest risk, now measured.** A viewer is a latency problem where the
+converter is a throughput one. One preview frame costs **125 ms at 1080p and 860 ms
+for a 2160² 80-channel file**, and dropping the preview resolution barely helps —
+the cost is reading and decoding the EXR, not the transform.
+
+So the CPU path cannot be made interactive by tuning; it has to stop re-reading.
+Two stages, in order:
+
+1. **Cache the decoded linear layer in memory** and re-run only the display
+   transform when exposure or view changes. That makes the controls interactive
+   without touching the read cost, and is most of the benefit.
+2. **Move the transform to the GPU** via OCIO's GPU path and a WebGL canvas, which
+   is how tev is fast. Considerably more work, and only worth it after stage 1
+   proves the interaction model.
 
 Worth splitting into its own repo if it grows past a single window; the two tools
 share `core.py` and little else.
