@@ -138,10 +138,10 @@ textarea {
 
 .main {
   display: grid;
-  /* Preview column width follows the size preset; a bigger preview is mostly
-     for cryptomatte picking, where a small one makes objects hard to hit. */
-  grid-template-columns: minmax(0, 1fr) var(--preview-w, 320px);
-  transition: grid-template-columns 220ms var(--ease-out);
+  /* The preview column is dragged, or jumped to with the S/M/L presets. A
+     bigger preview is mostly for cryptomatte picking, where a small one makes
+     objects hard to hit. */
+  grid-template-columns: minmax(0, 1fr) auto var(--preview-w, 360px);
   gap: 18px;
   padding: 18px 22px;
   overflow: hidden;
@@ -154,6 +154,53 @@ textarea {
   gap: 14px;
   min-height: 0;
   min-width: 0;
+}
+
+/*
+ * The drag handle. Only 5px wide so it does not eat layout, but the ::before
+ * gives it a comfortable hit area either side - a 5px target is a fiddly one.
+ */
+.resizer {
+  position: relative;
+  width: 5px;
+  margin: 0 -5px 0 0;
+  cursor: col-resize;
+  flex: none;
+}
+
+.resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0 -6px;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  inset: 12px 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background var(--duration-ui) var(--ease-ui);
+}
+
+.resizer:hover::after,
+.resizer.is-dragging::after,
+.resizer:focus-visible::after {
+  background: var(--line-strong);
+}
+
+.resizer.is-dragging::after {
+  background: var(--accent);
+}
+
+/* While dragging, nothing else should take the cursor or select text. */
+body.resizing {
+  cursor: col-resize;
+}
+
+body.resizing * {
+  pointer-events: none;
+  user-select: none;
 }
 
 /* --------------------------------------------------------------------------

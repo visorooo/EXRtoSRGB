@@ -140,6 +140,12 @@ change event and mutates no attribute**, so every programmatic write goes throug
 `setValue()` in app.js; and repopulating options is caught by a `MutationObserver`,
 which is why `fillSelect` works without special handling.
 
+**Preview sizing has two independent axes.** The column width is freeform
+(`--preview-w`, dragged or jumped to by the S/M/L presets, persisted as
+`preview_width`); the *render* resolution snaps to `RENDER_TIERS` and only changes
+when a tier boundary is crossed. Keep them separate — tying the render to the
+width re-renders on every pixel of a drag, and a render is tens of milliseconds.
+
 **Scripts are plain, not ES modules.** The UI loads from a `file://` URL, whose
 opaque origin makes `import` fail CORS. `select.js` must load before `app.js`.
 

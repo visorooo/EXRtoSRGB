@@ -121,9 +121,12 @@ transform 40 ms, **PNG encode 108 ms**. Encoding is the next bottleneck, and
 at every level. JPEG encodes ~4× faster but cannot carry alpha, so the honest fix
 is stage two, the GPU path.
 
-**Three preview sizes.** S/M/L widen the column and raise the render resolution
-together; a wider box showing the same 512px image would only be blurry. Large is
-mainly for cryptomatte picking, where small objects are hard to hit.
+**Draggable preview, with S/M/L as quick jumps.** Layout is freeform; the render
+resolution is not. It snaps to three tiers (384 / 512 / 900) behind the drag, and
+nothing re-renders until the drag ends — a render costs tens of milliseconds and
+scales with area, so re-rendering per pixel of drag would thrash. The browser
+scales the image between tiers, which makes them invisible. Presets stay as one-
+click jumps and light up when the width matches, the way Nuke and Resolve do it.
 
 **Coloured cryptomatte view, with ctrl-click picking.** The preview switches
 between the render and the Nuke/AE-style coloured ID view. Ctrl-clicking an object

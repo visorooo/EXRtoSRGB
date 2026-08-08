@@ -198,6 +198,20 @@
           </section>
         </div>
 
+        <!--
+          Drag to size the preview. Layout is freeform; the render resolution
+          snaps to a few tiers behind it, because re-rendering on every pixel of
+          drag would thrash something that costs tens of milliseconds a frame.
+        -->
+        <div
+          class="resizer"
+          id="resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize preview"
+          tabindex="0"
+        ></div>
+
         <!-- right column: preview -->
         <div class="col">
           <section class="panel" id="preview-panel">

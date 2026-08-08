@@ -172,6 +172,17 @@ will open than EXR.
 next to its `.exr` with the same stem and no way to tell which came from where.
 Turn it off if your naming is already handled downstream.
 
+**Preview size** — drag the divider between the panels, or use the **S / M / L**
+buttons above the preview to jump. A bigger preview mostly helps cryptomatte
+picking, where small objects are hard to hit accurately. The width is remembered.
+
+**Viewer controls** — **exposure** in stops, **gamma**, and channel isolation
+(**RGB / R / G / B / A / Y**), with a pixel probe reading linear scene values under
+the cursor. Exposure is applied in linear before the display transform, so it
+behaves like a camera stop rather than a brightness slider; gamma is applied after,
+on display values, like a compositor's viewer gamma. None of these re-read the file
+— the decoded layer is cached — so they respond immediately.
+
 **Light / dark** — the sun/moon button in the top right. The choice is remembered
 in `%LOCALAPPDATA%\EXRtoSRGB\prefs.json`. Dark is the default and the better choice
 when you're actually judging a render — a light surround biases how you read

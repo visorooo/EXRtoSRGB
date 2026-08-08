@@ -195,12 +195,16 @@ class Api:
             "config": core.ACES_CONFIGS[core.DEFAULT_CONFIG_LABEL],
             "hint": "Drop .exr files or folders anywhere in this window.",
             "theme": load_prefs().get("theme", "dark"),
-            "preview_size": load_prefs().get("preview_size", "m"),
+            "preview_width": load_prefs().get("preview_width", 360),
         }
 
-    def set_preview_size(self, size):
-        if size in ("s", "m", "l"):
-            save_prefs({"preview_size": size})
+    def set_preview_width(self, width):
+        """Remember the dragged preview width, clamped to something sane."""
+        try:
+            w = max(240, min(900, int(width)))
+        except (TypeError, ValueError):
+            return False
+        save_prefs({"preview_width": w})
         return True
 
     def set_theme(self, theme):

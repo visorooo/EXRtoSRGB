@@ -429,26 +429,83 @@ function showTab(which) {
  * box showing the same 512px image would just be blurry. Large is mainly for
  * cryptomatte picking, where small objects are hard to hit accurately.
  */
-const PREVIEW_SIZES = {
-  s: { col: 280, px: 384 },
-  m: { col: 360, px: 512 },
-  l: { col: 560, px: 900 },
-};
+const PREVIEW_SIZES = { s: 280, m: 360, l: 560 };
+const PREVIEW_MIN = 240;
+const PREVIEW_MAX = 900;
 
-function setPreviewSize(key, persist = true) {
-  const size = PREVIEW_SIZES[key] ? key : 'm';
-  state.previewSize = size;
-  document.documentElement.style.setProperty(
-    '--preview-w', PREVIEW_SIZES[size].col + 'px');
-  for (const b of $('pv-sizes').querySelectorAll('button')) {
-    b.classList.toggle('is-active', b.dataset.size === size);
-  }
-  if (persist) window.pywebview.api.set_preview_size(size);
-  schedulePreview();
-}
+/*
+ * Render tiers, deliberately coarse and separate from the column width.
+ *
+ * The layout is freeform, but a render costs tens of milliseconds and scales
+ * with area, so it snaps to a few sizes and the browser scales the image the
+ * rest of the way. Dragging therefore stays smooth: nothing re-renders until
+ * the drag ends, and even then only if the tier actually changed.
+ */
+const RENDER_TIERS = [384, 512, 900];
 
 function previewPx() {
-  return PREVIEW_SIZES[state.previewSize || 'm'].px;
+  const w = state.previewW || PREVIEW_SIZES.m;
+  return RENDER_TIERS.find((t) => t >= w * 1.15) ?? RENDER_TIERS[RENDER_TIERS.length - 1];
+}
+
+function applyPreviewWidth(px) {
+  const w = Math.round(Math.min(PREVIEW_MAX, Math.max(PREVIEW_MIN, px)));
+  const before = previewPx();
+  state.previewW = w;
+  document.documentElement.style.setProperty('--preview-w', w + 'px');
+  // The preset buttons light up when the width happens to match one.
+  for (const b of $('pv-sizes').querySelectorAll('button')) {
+    b.classList.toggle('is-active', PREVIEW_SIZES[b.dataset.size] === w);
+  }
+  return previewPx() !== before;   // did the render tier change?
+}
+
+function setPreviewWidth(px, { persist = true, rerender = true } = {}) {
+  const tierChanged = applyPreviewWidth(px);
+  if (persist) window.pywebview.api.set_preview_width(state.previewW);
+  if (rerender && tierChanged) schedulePreview();
+}
+
+function wireResizer() {
+  const handle = $('resizer');
+  let startX = 0;
+  let startW = 0;
+
+  const onMove = (e) => {
+    // dragging left widens the preview, since it is the right-hand column
+    applyPreviewWidth(startW - (e.clientX - startX));
+  };
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    handle.classList.remove('is-dragging');
+    document.body.classList.remove('resizing');
+    // Re-render once, at the end, rather than on every pixel of the drag.
+    window.pywebview.api.set_preview_width(state.previewW);
+    schedulePreview();
+  };
+
+  handle.addEventListener('pointerdown', (e) => {
+    startX = e.clientX;
+    startW = state.previewW || PREVIEW_SIZES.m;
+    handle.classList.add('is-dragging');
+    document.body.classList.add('resizing');
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    e.preventDefault();
+  });
+
+  // Keyboard, because a drag handle that only takes a mouse is not a control.
+  handle.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 40 : 10;
+    if (e.key === 'ArrowLeft') setPreviewWidth((state.previewW || 360) + step);
+    else if (e.key === 'ArrowRight') setPreviewWidth((state.previewW || 360) - step);
+    else return;
+    e.preventDefault();
+  });
+
+  // Double-click snaps back to the middle preset.
+  handle.addEventListener('dblclick', () => setPreviewWidth(PREVIEW_SIZES.m));
 }
 
 function setPreviewMode(mode) {
@@ -604,7 +661,7 @@ function wireCrypto() {
     b.onclick = () => setPreviewMode(b.dataset.mode);
   }
   for (const b of $('pv-sizes').querySelectorAll('button')) {
-    b.onclick = () => setPreviewSize(b.dataset.size);
+    b.onclick = () => setPreviewWidth(PREVIEW_SIZES[b.dataset.size]);
   }
   $('crypto-type').onchange = () => { renderObjects(); schedulePreview(); };
   $('crypto-filter').oninput = renderObjects;
@@ -860,6 +917,7 @@ window.addEventListener('pywebviewready', async () => {
   wireCrypto();
   wirePicking();
   wireViewer();
+  wireResizer();
   applyDefaults();
   syncFormat();
   // Swap the native <select>s for the animated ones. The originals stay in the
@@ -867,7 +925,8 @@ window.addEventListener('pywebviewready', async () => {
   upgradeSelects();
   const init = await window.pywebview.api.init();
   setTheme(init.theme || 'dark');
-  setPreviewSize(init.preview_size || 'm', false);
+  setPreviewWidth(init.preview_width || PREVIEW_SIZES.m,
+                  { persist: false, rerender: false });
   $('version').textContent = 'v' + init.version;
   await reloadConfigList(init.config);
   state.ready = true;
