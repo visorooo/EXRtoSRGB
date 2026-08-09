@@ -500,6 +500,38 @@ class ViewerApi:
         except Exception:
             return {}
 
+    def convert_presets(self):
+        """
+        The same list the right-click menu uses.
+
+        Defined once in CONVERT_VERBS so the two menus cannot drift: an option
+        that exists in Explorer but not here (or vice versa) would be a puzzle
+        with no visible cause.
+        """
+        return [{"label": label, "format": fmt, "bits": bits,
+                 "transfer": transfer}
+                for _key, label, fmt, bits, transfer in CONVERT_VERBS]
+
+    def convert(self, fmt, bits, transfer):
+        """Convert the open file with one of the presets."""
+        try:
+            out = convert_cli(self._path, fmt, int(bits), transfer)
+            if not out:
+                return {"ok": False, "error": "conversion failed"}
+            return {"ok": True, "name": os.path.basename(out), "path": out}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def reveal(self, path):
+        """Show a converted file in Explorer."""
+        try:
+            if os.name == "nt" and os.path.exists(path):
+                import subprocess
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            return True
+        except Exception:
+            return False
+
     def set_theme(self, theme):
         if theme in ("dark", "light"):
             save_prefs({"theme": theme})

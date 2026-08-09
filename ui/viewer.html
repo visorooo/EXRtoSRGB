@@ -32,6 +32,18 @@
 
         <button class="ghost" id="vfit" title="Fit to window (F)">Fit</button>
         <button class="ghost" id="v100" title="Actual pixels (1)">1:1</button>
+
+        <!-- same presets as the Explorer right-click menu, built from one list -->
+        <div class="vmenu-wrap">
+          <button id="vconvert" aria-haspopup="menu" aria-expanded="false">
+            Convert
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5"
+                    stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+
         <button class="icon" id="vtheme" title="Toggle light / dark">◐</button>
       </header>
 
@@ -57,6 +69,9 @@
         <span class="vprobe" id="vprobe"></span>
         <span class="vzoom" id="vzoom">100%</span>
       </footer>
+
+      <!-- transient confirmation after a convert; click it to reveal the file -->
+      <div class="vtoast" id="vtoast" hidden></div>
     </div>
 
     <script src="select.js"></script>

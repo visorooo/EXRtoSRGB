@@ -163,6 +163,7 @@ function wire() {
 
   $('vfit').onclick = () => fit();
   $('v100').onclick = () => actualPixels();
+  $('vconvert').onclick = () => openMenu();
 
   // exposure / gamma
   const exp = $('vexp');
@@ -217,7 +218,10 @@ function wire() {
     else if (k === '1') actualPixels();
     else if (k === '+' || k === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
     else if (k === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.25);
-    else if (k === 'escape') window.pywebview.api.close_window();
+    else if (k === 'escape') {
+      if (menuEl) closeMenu();
+      else window.pywebview.api.close_window();
+    }
     else if (['r', 'g', 'b', 'a'].includes(k)) {
       const btn = $('vchannels').querySelector(`button[data-ch="${k}"]`);
       if (btn) btn.click();
@@ -227,7 +231,115 @@ function wire() {
     e.preventDefault();
   });
 
-  window.addEventListener('resize', () => applyTransform());
+  window.addEventListener('resize', () => {
+    applyTransform();
+    closeMenu();
+  });
+}
+
+/* ---------------------------------------------------------------------------
+ * Convert menu
+ *
+ * The presets come from Python (the same CONVERT_VERBS the Explorer right-click
+ * menu is built from), so the two can never offer different things.
+ * ------------------------------------------------------------------------ */
+
+let menuEl = null;
+
+function closeMenu() {
+  if (!menuEl) return;
+  menuEl.remove();
+  menuEl = null;
+  $('vconvert').setAttribute('aria-expanded', 'false');
+  document.removeEventListener('mousedown', onMenuOutside, true);
+  document.removeEventListener('keydown', onMenuKey, true);
+}
+
+function onMenuOutside(e) {
+  if (menuEl && !menuEl.contains(e.target) && !$('vconvert').contains(e.target)) {
+    closeMenu();
+  }
+}
+
+function onMenuKey(e) {
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    closeMenu();
+  }
+}
+
+async function openMenu() {
+  if (menuEl) return closeMenu();
+  const presets = await window.pywebview.api.convert_presets();
+  const btn = $('vconvert');
+  const r = btn.getBoundingClientRect();
+
+  menuEl = document.createElement('div');
+  menuEl.className = 'vmenu';
+  menuEl.setAttribute('role', 'menu');
+  for (const p of presets) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.textContent = p.label;
+    b.onclick = () => {
+      closeMenu();
+      runConvert(p);
+    };
+    menuEl.appendChild(b);
+  }
+  document.body.appendChild(menuEl);
+  // right-aligned to the button, flipped up if it would run off the bottom
+  const mh = menuEl.offsetHeight;
+  menuEl.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+  if (r.bottom + mh + 8 > window.innerHeight) {
+    menuEl.style.top = Math.max(8, r.top - mh - 4) + 'px';
+    menuEl.style.transformOrigin = 'bottom right';
+  } else {
+    menuEl.style.top = r.bottom + 4 + 'px';
+  }
+
+  btn.setAttribute('aria-expanded', 'true');
+  document.addEventListener('mousedown', onMenuOutside, true);
+  document.addEventListener('keydown', onMenuKey, true);
+}
+
+let toastTimer = null;
+function toast(text, { error = false, onClick = null, hint = '' } = {}) {
+  const el = $('vtoast');
+  el.className = 'vtoast' + (error ? ' err' : '');
+  el.textContent = text;
+  if (hint) {
+    const s = document.createElement('span');
+    s.className = 'hint';
+    s.textContent = hint;
+    el.appendChild(s);
+  }
+  el.hidden = false;
+  el.onclick = onClick;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.hidden = true;
+  }, error ? 6000 : 4000);
+}
+
+async function runConvert(preset) {
+  $('vconvert').disabled = true;
+  toast(`Converting to ${preset.label}…`);
+  try {
+    const r = await window.pywebview.api.convert(
+      preset.format, preset.bits, preset.transfer);
+    if (!r.ok) {
+      toast(r.error || 'Conversion failed', { error: true });
+      return;
+    }
+    toast(`Saved ${r.name}`, {
+      hint: 'click to show in Explorer',
+      onClick: () => window.pywebview.api.reveal(r.path),
+    });
+  } finally {
+    $('vconvert').disabled = false;
+  }
 }
 
 let probeTimer = null;

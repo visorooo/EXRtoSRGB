@@ -140,3 +140,102 @@
   text-align: right;
   color: var(--ink-soft);
 }
+
+/* --------------------------------------------------------------------------
+ * Convert menu
+ *
+ * Reuses the select panel's look and motion rather than inventing a second
+ * popup style - it is the same gesture, so it should feel the same.
+ * ------------------------------------------------------------------------ */
+
+.vmenu-wrap {
+  position: relative;
+}
+
+#vconvert {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#vconvert svg {
+  transition: transform 150ms var(--ease-ui);
+}
+
+#vconvert[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.vmenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-float);
+  transform-origin: top right;
+  animation: select-in 140ms var(--ease-ui);
+}
+
+.vmenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.vmenu button:hover:not(:disabled) {
+  background: var(--panel-sunken);
+  border-color: transparent;
+}
+
+.vmenu button:active:not(:disabled) {
+  transform: none;
+}
+
+/* --------------------------------------------------------------------------
+ * Toast
+ * ------------------------------------------------------------------------ */
+
+.vtoast {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  z-index: 70;
+  max-width: 80%;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  animation: toast-in 200ms var(--ease-out);
+}
+
+.vtoast.err {
+  border-color: var(--danger);
+  color: var(--danger);
+  cursor: default;
+}
+
+.vtoast .hint {
+  color: var(--ink-faint);
+  margin-left: 8px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+}

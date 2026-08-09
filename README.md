@@ -224,6 +224,8 @@ The viewer window gives you:
 - **Channel isolation** — keys **R G B A**, **C** back to colour.
 - **Layer switching** for multi-layer EXRs.
 - **A pixel probe** showing linear scene values under the cursor.
+- **Convert** — the same five presets as the right-click menu, applied to the open
+  file. A toast confirms what was written; click it to show the file in Explorer.
 - **Esc** closes.
 
 Zoom and pan are pure canvas transforms, so they stay smooth whatever the image

@@ -236,6 +236,12 @@ Registry entries point at a **copy under `%LOCALAPPDATA%`**, never at `BASE_DIR`
 in a one-file build that is a temp directory which is deleted on exit, so the icon
 would go blank the moment the app closes.
 
+**`CONVERT_VERBS` is the single source for both convert menus** — the Explorer
+right-click submenu and the viewer's Convert button, which fetches it through
+`ViewerApi.convert_presets()`. An option that existed in one place but not the
+other would be a puzzle with no visible cause, so add presets there and nowhere
+else.
+
 **Context-menu verbs go under `SystemFileAssociations\.exr`,** not our ProgID, so
 they appear whatever application owns the file type. On Windows 11 they land under
 "Show more options". The short menu takes **only** `IExplorerCommand` COM handlers

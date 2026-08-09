@@ -121,6 +121,9 @@ against the *source* resolution, so 100% means actual pixels of the original.
 **Newly added files are selected automatically**, so a drop previews the thing you
 just dropped.
 
+**The same convert presets inside the viewer**, from a Convert button in its top
+bar. Both menus are built from `CONVERT_VERBS`, so they cannot drift apart.
+
 **Right-click → Convert to sRGB.** Five verbs (PNG 8/16, JPEG, TIFF 16, TIFF
 32-bit scene-linear) registered under `SystemFileAssociations\.exr`, so they show
 up whatever application owns the file type. `--convert` runs headless — no window
