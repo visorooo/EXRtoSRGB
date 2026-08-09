@@ -241,6 +241,17 @@ def pick_layer(channelnames, requested=None):
     return best, comps, note
 
 
+def image_size(path):
+    """(width, height) without decoding any pixels."""
+    src = oiio.ImageInput.open(path)
+    if src is None:
+        raise IOError("Could not open EXR: %s" % oiio.geterror())
+    spec = src.spec()
+    size = (spec.width, spec.height)
+    src.close()
+    return size
+
+
 def probe_layers(path):
     """Return the convertible layer names in an EXR, best-guess first."""
     src = oiio.ImageInput.open(path)

@@ -104,6 +104,143 @@ def _exe_command():
         sys.executable, os.path.abspath(__file__))
 
 
+CONTEXT_KEY = r"Software\Classes\SystemFileAssociations\.exr\shell\EXRtoSRGB.Convert"
+
+# label, format, bit depth, transfer
+CONVERT_VERBS = [
+    ("01png", "PNG · 16-bit", "png", 16, "display"),
+    ("02png8", "PNG · 8-bit", "png", 8, "display"),
+    ("03jpg", "JPEG · quality 95", "jpeg", 8, "display"),
+    ("04tif", "TIFF · 16-bit", "tiff", 16, "display"),
+    ("05tiflin", "TIFF · 32-bit scene-linear", "tiff", 32, "linear"),
+]
+
+
+def _persistent_icon(name):
+    """
+    A copy of an icon that outlives the process.
+
+    In a one-file build BASE_DIR is a temp directory that is deleted on exit, so
+    a registry entry pointing there shows a blank icon the moment the app
+    closes. The copy lives beside the preferences instead.
+    """
+    src = os.path.join(BASE_DIR, name)
+    dst = os.path.join(os.path.dirname(prefs_path()), name)
+    try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.exists(src):
+            with open(src, "rb") as a, open(dst, "wb") as b:
+                b.write(a.read())
+        return dst if os.path.exists(dst) else src
+    except OSError:
+        return src
+
+
+def _convert_command(fmt, bits, transfer):
+    exe = ('"%s"' % sys.executable if getattr(sys, "frozen", False)
+           else '"%s" "%s"' % (sys.executable, os.path.abspath(__file__)))
+    return '%s --convert %s --bits %d --transfer %s "%%1"' % (
+        exe, fmt, bits, transfer)
+
+
+def context_menu_state():
+    if os.name != "nt":
+        return False
+    import winreg
+    try:
+        winreg.OpenKey(winreg.HKEY_CURRENT_USER, CONTEXT_KEY).Close()
+        return True
+    except OSError:
+        return False
+
+
+def set_context_menu(enable):
+    """
+    Add or remove the right-click "Convert to sRGB" submenu.
+
+    Registered under SystemFileAssociations rather than our own ProgID, so the
+    entries appear on .exr files whatever application owns the file type - you
+    do not have to make this the default viewer to get the convert commands.
+    """
+    if os.name != "nt":
+        raise RuntimeError("context menu is Windows-only")
+    import winreg
+
+    def nuke(path):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as k:
+                while True:
+                    try:
+                        nuke(path + "\\" + winreg.EnumKey(k, 0))
+                    except OSError:
+                        break
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
+        except OSError:
+            pass
+
+    if not enable:
+        nuke(CONTEXT_KEY)
+        return False
+
+    icon = _persistent_icon("exr.ico")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, CONTEXT_KEY) as k:
+        winreg.SetValueEx(k, "MUIVerb", 0, winreg.REG_SZ, "Convert to sRGB")
+        winreg.SetValueEx(k, "Icon", 0, winreg.REG_SZ, icon)
+        # An empty SubCommands turns the child "shell" key into a flyout.
+        winreg.SetValueEx(k, "SubCommands", 0, winreg.REG_SZ, "")
+    for key, label, fmt, bits, transfer in CONVERT_VERBS:
+        base = "%s\\shell\\%s" % (CONTEXT_KEY, key)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as k:
+            winreg.SetValueEx(k, "MUIVerb", 0, winreg.REG_SZ, label)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + "\\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ,
+                              _convert_command(fmt, bits, transfer))
+    try:
+        import ctypes
+        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0x0000, None, None)
+    except Exception:
+        pass
+    return True
+
+
+def convert_cli(path, fmt="png", bits=16, transfer="display"):
+    """
+    Headless convert, for the right-click menu. No window, no prompts.
+
+    Errors surface as a message box rather than a silent failure, because there
+    is no console to print to when the shell launches this.
+    """
+    config = core.ACES_CONFIGS[core.DEFAULT_CONFIG_LABEL]
+    display = core.default_display(config)
+    settings = {
+        "config": config,
+        "src": "ACEScg",
+        "display": display,
+        "view": core.view_for(config, display, True),
+        "format": fmt,
+        "quality": 95,
+        "bits": int(bits),
+        "alpha_mode": "keep",
+        "layer": None,
+        "unpremult": True,
+        "transfer": transfer,
+        "out_dir": None,
+        "suffix": "_linear" if transfer == "linear" else "_srgb",
+    }
+    try:
+        out, info = core.convert_one(path, settings)
+        return out
+    except Exception as e:
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                None, "Could not convert:\n\n%s\n\n%s" % (path, e),
+                "EXR → sRGB", 0x10)
+        except Exception:
+            pass
+        return None
+
+
 def association_state():
     """Is .exr currently pointing at us? Returns (associated, current_handler)."""
     if os.name != "nt":
@@ -152,9 +289,9 @@ def set_association(enable):
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
                           r"Software\Classes\%s" % PROG_ID) as k:
         winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "OpenEXR image")
-    icon = os.path.join(BASE_DIR, "app.ico")
-    if getattr(sys, "frozen", False):
-        icon = sys.executable + ",0"
+    # The .exr document icon, not the application icon - a file and the app
+    # that opens it should not look identical in Explorer.
+    icon = _persistent_icon("exr.ico")
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
                           r"Software\Classes\%s\DefaultIcon" % PROG_ID) as k:
         winreg.SetValueEx(k, "", 0, winreg.REG_SZ, icon)
@@ -174,6 +311,116 @@ def set_association(enable):
     except Exception:
         pass
     return True
+
+
+# ----------------------------------------------------------------------------
+# Window geometry
+#
+# pywebview centres on whatever it considers the primary display, which on a
+# multi-monitor setup is not reliably where the user is looking. Positions are
+# computed explicitly instead, and remembered per window kind so the app opens
+# where it was left.
+# ----------------------------------------------------------------------------
+
+# Chrome above and below the image in the viewer: title bar row + footer row.
+VIEWER_CHROME_H = 96
+VIEWER_CHROME_W = 32
+
+
+def primary_screen():
+    """(x, y, width, height) of the display to open on."""
+    try:
+        screens = webview.screens
+        # The origin screen is the primary one; on stacked layouts the others
+        # have negative coordinates.
+        for s in screens:
+            if getattr(s, "x", 0) == 0 and getattr(s, "y", 0) == 0:
+                return 0, 0, s.width, s.height
+        s = screens[0]
+        return getattr(s, "x", 0), getattr(s, "y", 0), s.width, s.height
+    except Exception:
+        return 0, 0, 1920, 1080
+
+
+def centre_on_screen(w, h):
+    sx, sy, sw, sh = primary_screen()
+    return sx + max(0, (sw - w) // 2), sy + max(0, (sh - h) // 2)
+
+
+def viewer_geometry(path):
+    """
+    Size the viewer to the image, capped to the screen.
+
+    Fits the frame at up to 1:1 within a comfortable share of the display, so a
+    small render opens small and a 4K plate opens as large as it usefully can
+    rather than at a fixed default that suits neither.
+    """
+    saved = load_prefs().get("viewer_geometry") or {}
+    if saved.get("w") and saved.get("h"):
+        w, h = int(saved["w"]), int(saved["h"])
+        if saved.get("x") is not None and saved.get("y") is not None:
+            return int(saved["x"]), int(saved["y"]), w, h
+        x, y = centre_on_screen(w, h)
+        return x, y, w, h
+
+    sx, sy, sw, sh = primary_screen()
+    try:
+        iw, ih = core.image_size(path)
+    except Exception:
+        iw, ih = 1280, 720
+
+    max_w = int(sw * 0.78) - VIEWER_CHROME_W
+    max_h = int(sh * 0.86) - VIEWER_CHROME_H
+    # never upscale past 1:1 - a 512px render should not open full screen
+    scale = min(max_w / iw, max_h / ih, 1.0)
+    w = max(720, int(iw * scale) + VIEWER_CHROME_W)
+    h = max(520, int(ih * scale) + VIEWER_CHROME_H)
+    x, y = centre_on_screen(w, h)
+    return x, y, w, h
+
+
+def remember_geometry(window, key):
+    """
+    Persist size and position, so the window reopens where it was left.
+
+    Saved on a short debounce after the last move or resize rather than only on
+    close: `closing` does not fire if the process is killed or crashes, and
+    losing the geometry in those cases is exactly when it is most annoying. The
+    debounce keeps a drag from writing the file on every frame.
+    """
+    state = {}
+    timer = {"t": None}
+
+    def flush():
+        if state.get("w") and state.get("h"):
+            save_prefs({key: dict(state)})
+
+    def schedule():
+        if timer["t"] is not None:
+            timer["t"].cancel()
+        timer["t"] = threading.Timer(0.8, flush)
+        timer["t"].daemon = True
+        timer["t"].start()
+
+    def on_resized(w, h):
+        state["w"], state["h"] = int(w), int(h)
+        schedule()
+
+    def on_moved(x, y):
+        state["x"], state["y"] = int(x), int(y)
+        schedule()
+
+    def on_closing():
+        if timer["t"] is not None:
+            timer["t"].cancel()
+        flush()
+
+    try:
+        window.events.resized += on_resized
+        window.events.moved += on_moved
+        window.events.closing += on_closing
+    except Exception:
+        pass  # geometry memory is a convenience, never a failure
 
 
 class ViewerApi:
@@ -249,15 +496,18 @@ class ViewerApi:
 
 
 def open_viewer(path, blocking=True):
-    """Create a viewer window for one EXR."""
-    api = ViewerApi(os.path.abspath(path))
+    """Create a viewer window for one EXR, sized and placed sensibly."""
+    path = os.path.abspath(path)
+    api = ViewerApi(path)
     bg = "#f5f4f1" if load_prefs().get("theme") == "light" else "#242322"
+    x, y, w, h = viewer_geometry(path)
     win = webview.create_window(
         "%s · EXR → sRGB" % os.path.basename(path),
         os.path.join(UI_DIR, "viewer.html"),
-        js_api=api, width=1100, height=780, min_size=(560, 420),
+        js_api=api, width=w, height=h, x=x, y=y, min_size=(560, 420),
         background_color=bg, text_select=False)
     api._window = win
+    remember_geometry(win, "viewer_geometry")
     return win
 
 
@@ -495,6 +745,22 @@ class Api:
         associated, current = association_state()
         return {"supported": True, "associated": associated,
                 "current": current or ""}
+
+    def context_menu(self):
+        if os.name != "nt":
+            return {"supported": False, "enabled": False}
+        return {"supported": True, "enabled": context_menu_state()}
+
+    def set_context_menu(self, enable):
+        try:
+            state = set_context_menu(bool(enable))
+            self._js("onLog",
+                     "Added the right-click convert menu." if state
+                     else "Removed the right-click convert menu.", "ok")
+            return {"ok": True, "enabled": state}
+        except Exception as e:
+            self._js("onLog", "Could not change the context menu: %s" % e, "err")
+            return {"ok": False, "error": str(e)}
 
     def set_association(self, enable):
         try:
@@ -829,6 +1095,24 @@ def attach_dnd(window, api):
 
 
 def main():
+    argv = sys.argv[1:]
+
+    # `--convert <fmt> --bits N --transfer T <path>`: the right-click verbs.
+    # Headless - it writes the file and exits without ever creating a window.
+    if "--convert" in argv:
+        def opt(name, default):
+            return argv[argv.index(name) + 1] if name in argv else default
+        fmt = opt("--convert", "png")
+        bits = int(opt("--bits", 16))
+        transfer = opt("--transfer", "display")
+        flags = {"--convert", "--bits", "--transfer"}
+        rest = [a for i, a in enumerate(argv)
+                if a not in flags and (i == 0 or argv[i - 1] not in flags)]
+        for target in rest:
+            if os.path.isfile(target):
+                convert_cli(target, fmt, bits, transfer)
+        return
+
     # `EXRtoSRGB.exe --view <path>` is what the shell runs on a double-click.
     # A bare path is accepted too, since that is what some launchers send.
     args = [a for a in sys.argv[1:] if a != "--view"]
@@ -845,17 +1129,27 @@ def main():
     # Match the saved theme so the window does not flash the wrong colour before
     # the page has applied it. --panel-sunken in each scale.
     bg = "#f5f4f1" if load_prefs().get("theme") == "light" else "#242322"
+    saved = load_prefs().get("main_geometry") or {}
+    w = int(saved.get("w") or 1180)
+    h = int(saved.get("h") or 920)
+    if saved.get("x") is not None and saved.get("y") is not None:
+        x, y = int(saved["x"]), int(saved["y"])
+    else:
+        x, y = centre_on_screen(w, h)
     window = webview.create_window(
         "%s  ·  v%s" % (APP_NAME, VERSION),
         os.path.join(UI_DIR, "index.html"),
         js_api=api,
-        width=1180,
-        height=920,
+        width=w,
+        height=h,
+        x=x,
+        y=y,
         min_size=(940, 720),
         background_color=bg,
         text_select=False,
     )
     api._window = window
+    remember_geometry(window, "main_geometry")
     window.events.loaded += lambda: attach_dnd(window, api)
     # On Windows the taskbar icon comes from the exe (spec: icon='app.ico');
     # this is what gives a source run the same mark instead of a Python one.

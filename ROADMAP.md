@@ -121,6 +121,25 @@ against the *source* resolution, so 100% means actual pixels of the original.
 **Newly added files are selected automatically**, so a drop previews the thing you
 just dropped.
 
+**Right-click → Convert to sRGB.** Five verbs (PNG 8/16, JPEG, TIFF 16, TIFF
+32-bit scene-linear) registered under `SystemFileAssociations\.exr`, so they show
+up whatever application owns the file type. `--convert` runs headless — no window
+is ever created. On Windows 11 they appear under "Show more options", because the
+short menu only accepts packaged apps with a COM handler.
+
+**A proper `.exr` document icon** — an aperture with an EXR label, separate from
+the application icon so a file and the app that opens it are distinguishable in
+Explorer. Below 32px it drops the label and gives the aperture the whole tile,
+since the text is unreadable at that size. The registry points at a copy under
+`%LOCALAPPDATA%` rather than `BASE_DIR`, which in a one-file build is a temp
+directory that disappears on exit and would leave a blank icon.
+
+**Window geometry.** Windows now open centred on the primary display and sized to
+the image, up to 1:1 and capped to the screen — pywebview's own centring picks a
+display that is not reliably the one being used. Size and position are remembered,
+saved on a debounce after each move or resize rather than only on close, since
+that event never fires if the process is killed.
+
 **Viewer, stage one.** Exposure, gamma, channel isolation (R/G/B/A/luma) and a
 pixel probe, all beside the preview. The point is `ViewerSession`: it decodes a
 layer once and keeps it, plus the downsampled copy per output size, so nothing

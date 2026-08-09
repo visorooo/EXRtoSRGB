@@ -220,6 +220,27 @@ pixels rather than invent smooth ones.
 Zoom percentages are reported against the **source** resolution, not the render,
 so "100%" means actual pixels of the original.
 
+**Window geometry is computed, not left to pywebview.** It centres on whatever it
+considers primary, which on a multi-monitor setup is not where the user is
+looking. `primary_screen()` picks the display at the origin, `viewer_geometry()`
+sizes the viewer to the image at up to 1:1 capped to the screen, and
+`remember_geometry()` persists size and position **on a debounce after each move
+or resize** rather than only on `closing` — that event does not fire when a
+process is killed, which is exactly when losing the geometry is most annoying.
+
+**Icons live in two places for a reason.** `app.ico` is the application; `exr.ico`
+is the `.exr` document icon (an aperture with an EXR label), so a file and the app
+that opens it are not identical in Explorer. Below 32px `exr.ico` drops the label
+and gives the aperture the whole tile, because the text is unreadable there.
+Registry entries point at a **copy under `%LOCALAPPDATA%`**, never at `BASE_DIR`:
+in a one-file build that is a temp directory which is deleted on exit, so the icon
+would go blank the moment the app closes.
+
+**Context-menu verbs go under `SystemFileAssociations\.exr`,** not our ProgID, so
+they appear whatever application owns the file type. On Windows 11 they land under
+"Show more options" — the short menu only takes packaged apps with an
+`IExplorerCommand` COM handler, which is not something a single exe can provide.
+
 **File association is per-user, under `HKCU\Software\Classes`.** No elevation,
 nothing changed for other accounts, and `SHChangeNotify` is called afterwards or
 Explorer keeps the old icon and handler until the next sign-in. Unregistering

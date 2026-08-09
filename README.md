@@ -205,6 +205,15 @@ silently seizes a file type on first run is not a good neighbour.
 You can also hit the **⧉** button above the preview to open the selected file in
 its own window without leaving the converter.
 
+The window opens **centred on your main display and sized to the image** — up to
+1:1, capped to fit the screen, so a small render opens small and a 4K plate opens
+as large as it usefully can. Move or resize it and that geometry is remembered for
+next time.
+
+`.exr` files also get their own icon once the association is on: an aperture with
+an EXR label, distinct from the application icon so a file and the app that opens
+it don't look identical in Explorer.
+
 The viewer window gives you:
 
 - **Zoom and pan** — scroll to zoom at the cursor, drag to pan. **F** fits, **1**
@@ -220,6 +229,31 @@ The viewer window gives you:
 Zoom and pan are pure canvas transforms, so they stay smooth whatever the image
 size; only exposure, gamma, channel and layer ask for new pixels, and those come
 off the cached layer rather than re-reading the file.
+
+---
+
+## Right-click → Convert to sRGB
+
+Tick **Right-click → Convert to sRGB** in Output settings to add a convert submenu
+to `.exr` files in Explorer:
+
+| | |
+|---|---|
+| PNG · 16-bit | the default, and what most comps want |
+| PNG · 8-bit | delivery |
+| JPEG · quality 95 | quick look, no alpha |
+| TIFF · 16-bit | |
+| TIFF · 32-bit scene-linear | no display transform, bit-identical values |
+
+Each writes next to the source with the matching suffix and no window ever opens.
+The entries are registered under `SystemFileAssociations`, so they appear whatever
+application owns `.exr` — you don't have to make this your default viewer to get
+them.
+
+**On Windows 11 they live under "Show more options"** (or Shift+right-click).
+Windows 11's short menu only accepts commands from packaged apps with a COM
+handler; every non-packaged tool's verbs go to the full menu. That's a limitation
+of the shell, not of the registration.
 
 ---
 

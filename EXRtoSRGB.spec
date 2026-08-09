@@ -16,7 +16,7 @@ alongside the exe.
 """
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ui', 'ui'), ('app.ico', '.')]
+datas = [('ui', 'ui'), ('app.ico', '.'), ('exr.ico', '.')]
 binaries = []
 hiddenimports = ['webview.platforms.winforms', 'clr_loader']
 

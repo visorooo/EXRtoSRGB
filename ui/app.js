@@ -827,6 +827,11 @@ function wire() {
     if (!r.ok) $('assoc').checked = !$('assoc').checked;
   };
 
+  $('ctx').onchange = async () => {
+    const r = await window.pywebview.api.set_context_menu($('ctx').checked);
+    if (!r.ok) $('ctx').checked = !$('ctx').checked;
+  };
+
   $('btn-theme').onclick = () => {
     const next =
       document.documentElement.getAttribute('data-theme') === 'light'
@@ -952,6 +957,11 @@ window.addEventListener('pywebviewready', async () => {
   if (assoc.supported) {
     $('assoc-wrap').hidden = false;
     $('assoc').checked = !!assoc.associated;
+  }
+  const ctx = await window.pywebview.api.context_menu();
+  if (ctx.supported) {
+    $('ctx-wrap').hidden = false;
+    $('ctx').checked = !!ctx.enabled;
   }
   state.ready = true;
   await refreshLayers();
