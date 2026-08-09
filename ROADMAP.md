@@ -299,11 +299,12 @@ does — is what keeps it from being far worse.
 Shape of the work:
 
 - **Decode** with TinyEXR (single header, MIT) or OpenEXR.
-- **Colour.** Matching the app means OCIO inside the DLL, which is a heavy
-  dependency for a shell extension. The alternative is an approximate tone curve
-  and documenting that thumbnails are indicative rather than colour-accurate.
-  Worth deciding early — it is the difference between a small DLL and a large one,
-  and between thumbnails that agree with the viewer and ones that do not.
+- **Colour: decided — approximate is fine.** Thumbnails do not need to match the
+  viewer, so **no OCIO in the DLL**. A Filmic or Reinhard curve with an sRGB
+  transfer is enough, which removes the single heaviest dependency and most of the
+  size. Thumbnails are indicative; the viewer remains the thing that is correct.
+  This is what makes the item worth doing at all rather than a large build for a
+  small payoff.
 - **Badge.** Trivial once the bitmap exists: composite `exr.ico` into the
   bottom-right before returning the HBITMAP.
 - **Registration** alongside the existing per-user association toggle.
@@ -314,7 +315,46 @@ loaded, so replacing it during development needs `explorer.exe` killed or a
 reboot; and the thumbnail cache has to be busted after a change, the same
 `ie4uinit -show` problem the file icon already had.
 
-### 3. Sequence player by the preview *(small — and measured)*
+### 3. Space-bar preview, QuickLook style *(feasible in Python — proven)*
+
+Select an `.exr` in Explorer, press a key, see it. The same gesture
+**[QuickLook](https://github.com/QL-Win/QuickLook)** provides, which is already how
+these files get previewed day to day.
+
+**Default to Ctrl+Space, not Space.** QuickLook owns Space, and a lot of people run
+it; taking that key would break a tool they already rely on. The binding is
+configurable, shown in the main window so it is discoverable rather than folklore,
+and stored in `prefs.json` beside the rest.
+
+**Both hard parts are already proven to work from Python**, tested on this machine
+rather than assumed:
+
+- **The global hotkey** is `RegisterHotKey` through `ctypes` — no dependency at
+  all, and it returned success for Ctrl+Space.
+- **Reading Explorer's selection** works through `Shell.Application` with
+  `comtypes`: enumerate shell windows, match the foreground `HWND`, and read
+  `Document.SelectedItems()`. Tested live and it returned the exact selected
+  `.exr` path.
+
+So there is no unknown in the mechanism. The actual work is that **the hotkey needs
+a resident process** — a key only reaches an application that is running. That
+means the piece to design is the same one QuickLook has:
+
+- A **tray presence** with a lightweight background mode, so the converter window
+  does not have to stay open.
+- An **optional start-with-Windows** entry, per-user under `Run`, behind a toggle
+  like the file association is. Nothing should add itself to startup silently.
+- Opening the existing viewer window for the selected file, which already exists —
+  `open_viewer()` takes a path and does the rest.
+
+Two details worth settling when it is built: the Desktop is a shell window too but
+reports its selection differently from a folder window, and pressing the key with
+several files selected should probably open the first rather than a window each.
+
+Note `comtypes` was installed while proving this and is not yet used by anything;
+it would become a real dependency and needs adding to the spec if this ships.
+
+### 4. Sequence player by the preview *(small — and measured)*
 
 Step and scrub through a sequence's frames next to the existing preview. Much
 smaller than the viewer above and worth doing first, because `make_thumbnail`
@@ -346,7 +386,7 @@ So the work splits cleanly:
 Only the second part is real work, and it is the same latency problem the viewer
 has, solved once for both.
 
-### 4. Smaller things
+### 5. Smaller things
 
 - **Per-file layer override.** The dropdown applies one choice to the batch, falling
   back to auto-detect per file. Mixed batches would benefit from remembering a
@@ -373,3 +413,5 @@ has, solved once for both.
   needs the viewer (item 1).
 - Explorer shows the `.exr` file icon, not the image. A real thumbnail needs a
   native `IThumbnailProvider` DLL — see V3 item 2.
+- There is no hotkey preview. The app has to be running to catch one, which needs
+  a resident tray mode — see V3 item 3.
