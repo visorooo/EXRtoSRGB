@@ -212,7 +212,12 @@ next time.
 
 `.exr` files also get their own icon once the association is on: an aperture with
 an EXR label, distinct from the application icon so a file and the app that opens
-it don't look identical in Explorer.
+it don't look identical in Explorer. It's the file *type* icon, not a preview of
+the image — Explorer thumbnails need a native shell extension, which is on the
+roadmap.
+
+The viewer opens any EXR, not only renders. HDRIs, plates and utility passes all
+work, since it only cares about the pixels.
 
 The viewer window gives you:
 

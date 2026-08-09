@@ -262,7 +262,59 @@ Still missing from the viewer regardless of the above:
   showing interpolated source. Re-rendering the visible crop at full resolution
   would fix it and is not hard, just not done.
 
-### 2. Sequence player by the preview *(small — and measured)*
+### 2. Explorer thumbnails for .exr *(the first non-Python part)*
+
+Show the actual image as the file's thumbnail in Explorer, with the aperture icon
+kept as a small badge in the bottom-right corner so the file type is still
+readable at a glance.
+
+Prior art: **[hdr-thumb](https://github.com/VitalSkib/hdr-thumb)** already does
+this for HDR, EXR and SVG and is what these files are previewed with today. Before
+adapting any of it, check its licence — a repo without a LICENSE grants no
+redistribution rights regardless of how public it is, which is the rule the rest of
+the VISOR tools already follow.
+
+**This cannot be done in Python.** Windows thumbnails come from an
+`IThumbnailProvider` COM object that Explorer loads **in-process** (or into a COM
+surrogate), registered at:
+
+```
+HKCU\Software\Classes\.exr\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}
+```
+
+That has to be a native DLL — C++ or Rust. There is no supported extension point
+that lets a separate executable answer, and shelling out to a 37 MB PyInstaller
+binary per file would be far too slow even if there were. So this is the first
+piece of the project that is not Python, with its own toolchain and build.
+
+**Measured, because it decides the design:** these renders carry **no embedded
+preview and no mip levels** — checked on a 2160² Blender frame and a 1080p plate,
+neither has a `PreviewImage` attribute. So the provider must decode the full image
+every time. Cost through this codebase's own path is **203 ms for a single-layer
+2160² frame and ~780 ms for an 80-channel one**. Explorer generates thumbnails
+asynchronously and caches them, so that is workable; the multi-AOV case is the one
+to watch, and reading only the beauty layer's channels — which `read_layer` already
+does — is what keeps it from being far worse.
+
+Shape of the work:
+
+- **Decode** with TinyEXR (single header, MIT) or OpenEXR.
+- **Colour.** Matching the app means OCIO inside the DLL, which is a heavy
+  dependency for a shell extension. The alternative is an approximate tone curve
+  and documenting that thumbnails are indicative rather than colour-accurate.
+  Worth deciding early — it is the difference between a small DLL and a large one,
+  and between thumbnails that agree with the viewer and ones that do not.
+- **Badge.** Trivial once the bitmap exists: composite `exr.ico` into the
+  bottom-right before returning the HBITMAP.
+- **Registration** alongside the existing per-user association toggle.
+- **64-bit only.** Modern Explorer will not load a 32-bit provider.
+
+Two operational wrinkles worth knowing before starting: Explorer keeps the DLL
+loaded, so replacing it during development needs `explorer.exe` killed or a
+reboot; and the thumbnail cache has to be busted after a change, the same
+`ie4uinit -show` problem the file icon already had.
+
+### 3. Sequence player by the preview *(small — and measured)*
 
 Step and scrub through a sequence's frames next to the existing preview. Much
 smaller than the viewer above and worth doing first, because `make_thumbnail`
@@ -294,7 +346,7 @@ So the work splits cleanly:
 Only the second part is real work, and it is the same latency problem the viewer
 has, solved once for both.
 
-### 3. Smaller things
+### 4. Smaller things
 
 - **Per-file layer override.** The dropdown applies one choice to the batch, falling
   back to auto-detect per file. Mixed batches would benefit from remembering a
@@ -319,3 +371,5 @@ has, solved once for both.
   auto-detect, with a warning.
 - Cryptomatte objects are selected from a list. Picking by clicking the image
   needs the viewer (item 1).
+- Explorer shows the `.exr` file icon, not the image. A real thumbnail needs a
+  native `IThumbnailProvider` DLL — see V3 item 2.
