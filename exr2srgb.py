@@ -104,6 +104,30 @@ def _exe_command():
         sys.executable, os.path.abspath(__file__))
 
 
+def refresh_shell():
+    """
+    Make Explorer notice a changed association or icon.
+
+    SHChangeNotify alone updates the handler but frequently not the icon:
+    Explorer caches icons per file type in its own database and will keep
+    showing the previous one, which looks exactly like the registration having
+    failed. `ie4uinit -show` rebuilds that cache, and is the documented way to
+    do it without deleting iconcache*.db by hand.
+    """
+    try:
+        import ctypes
+        # SHCNE_ASSOCCHANGED, SHCNF_IDLIST
+        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0x0000, None, None)
+    except Exception:
+        pass
+    try:
+        import subprocess
+        subprocess.run(["ie4uinit.exe", "-show"], timeout=10,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except Exception:
+        pass
+
+
 CONTEXT_KEY = r"Software\Classes\SystemFileAssociations\.exr\shell\EXRtoSRGB.Convert"
 
 # label, format, bit depth, transfer
@@ -180,6 +204,7 @@ def set_context_menu(enable):
 
     if not enable:
         nuke(CONTEXT_KEY)
+        refresh_shell()
         return False
 
     icon = _persistent_icon("exr.ico")
@@ -195,11 +220,7 @@ def set_context_menu(enable):
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + "\\command") as k:
             winreg.SetValueEx(k, "", 0, winreg.REG_SZ,
                               _convert_command(fmt, bits, transfer))
-    try:
-        import ctypes
-        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0x0000, None, None)
-    except Exception:
-        pass
+    refresh_shell()
     return True
 
 
@@ -284,6 +305,7 @@ def set_association(enable):
                     winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "")
         except OSError:
             pass
+        refresh_shell()
         return False
 
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
@@ -303,13 +325,7 @@ def set_association(enable):
                           r"Software\Classes\.exr") as k:
         winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
 
-    # Tell the shell to re-read associations, or Explorer keeps the old icon
-    # and handler until the next sign-in.
-    try:
-        import ctypes
-        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0x0000, None, None)
-    except Exception:
-        pass
+    refresh_shell()
     return True
 
 

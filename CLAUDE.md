@@ -238,8 +238,16 @@ would go blank the moment the app closes.
 
 **Context-menu verbs go under `SystemFileAssociations\.exr`,** not our ProgID, so
 they appear whatever application owns the file type. On Windows 11 they land under
-"Show more options" — the short menu only takes packaged apps with an
-`IExplorerCommand` COM handler, which is not something a single exe can provide.
+"Show more options". The short menu takes **only** `IExplorerCommand` COM handlers
+from a signed MSIX or sparse package declaring `windows.fileExplorerContextMenus` —
+a native DLL plus a package plus a trusted certificate. No registry verb from any
+application reaches it, which is why every unpackaged tool on the machine sits in
+the same submenu. Do not spend time trying to get there with registry keys.
+
+**Explorer caches icons separately from associations.** `SHChangeNotify` updates
+the handler but routinely leaves the old icon in place, which looks identical to a
+failed registration. `refresh_shell()` also runs `ie4uinit.exe -show` to rebuild
+that cache. If an icon still looks wrong, suspect the cache before the code.
 
 **File association is per-user, under `HKCU\Software\Classes`.** No elevation,
 nothing changed for other accounts, and `SHChangeNotify` is called afterwards or

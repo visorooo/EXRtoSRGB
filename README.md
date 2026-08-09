@@ -250,10 +250,36 @@ The entries are registered under `SystemFileAssociations`, so they appear whatev
 application owns `.exr` — you don't have to make this your default viewer to get
 them.
 
-**On Windows 11 they live under "Show more options"** (or Shift+right-click).
-Windows 11's short menu only accepts commands from packaged apps with a COM
-handler; every non-packaged tool's verbs go to the full menu. That's a limitation
-of the shell, not of the registration.
+### Why they're under "Show more options" on Windows 11
+
+Windows 11's short context menu does **not** accept registry-registered verbs from
+any application. To appear there a command must be an `IExplorerCommand` COM
+handler, shipped inside a **signed MSIX or sparse package** that declares
+`windows.fileExplorerContextMenus`. That means a native DLL (C++/C#/Rust — Python
+cannot provide an in-process COM server Explorer will load), a package manifest,
+and a code-signing certificate the machine trusts. Every non-packaged tool on your
+system — 7-Zip, PeaZip, ShareX, PowerRename — is in the same position, which is why
+they all appear in the same place.
+
+So the practical options are:
+
+- **Shift+right-click** opens the full menu directly, in one step.
+- **Make the full menu the default**, if you prefer Windows 10 behaviour. This is a
+  per-user Windows setting affecting *every* app, not just this one, so it's your
+  call rather than something the app should do:
+
+  ```bash
+  reg add "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" /f /ve
+  ```
+
+  Sign out and back in (or restart Explorer) to apply. Delete that key to revert.
+
+### If the icon or menu doesn't appear
+
+Explorer caches file-type icons in its own database, so a changed icon can keep
+showing the old one long after the registry is correct. Toggling the setting runs
+`ie4uinit.exe -show` to rebuild that cache, but if a stale icon persists, restart
+Explorer or sign out.
 
 ---
 
