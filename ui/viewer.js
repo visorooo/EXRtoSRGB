@@ -13,6 +13,26 @@
 
 const $ = (id) => document.getElementById(id);
 
+/*
+ * Bind a handler only if the element exists.
+ *
+ * A single missing element used to throw out of wire(), which runs before
+ * init() - so one stale control blanked the entire window: no name, no layers,
+ * no image, and no clue why. Version skew between a cached page and fresh
+ * script is exactly how that happens, so nothing here is allowed to be fatal.
+ */
+function on(id, event, handler) {
+  const el = $(id);
+  if (el) el.addEventListener(event, handler);
+  return el;
+}
+
+function fail(message) {
+  const el = $('vmeta');
+  if (el) el.textContent = message;
+  console.error(message);
+}
+
 const V = {
   path: null,
   exposure: 0,
@@ -161,31 +181,32 @@ function wire() {
     zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
   }, { passive: false });
 
-  $('vfit').onclick = () => fit();
-  $('v100').onclick = () => actualPixels();
-  $('vconvert').onclick = () => openMenu();
+  on('vfit', 'click', () => fit());
+  on('v100', 'click', () => actualPixels());
+  on('vconvert', 'click', () => openMenu());
 
   // exposure / gamma
   const exp = $('vexp');
   const gam = $('vgam');
-  exp.oninput = () => {
+  if (exp) exp.oninput = () => {
     V.exposure = parseFloat(exp.value);
     $('vexp-val').textContent = (V.exposure > 0 ? '+' : '') + V.exposure.toFixed(1);
     scheduleRender();
   };
-  gam.oninput = () => {
+  if (gam) gam.oninput = () => {
     V.gamma = parseFloat(gam.value);
     $('vgam-val').textContent = V.gamma.toFixed(2);
     scheduleRender();
   };
-  $('vreset').onclick = () => {
-    exp.value = '0';
-    gam.value = '1';
-    exp.oninput();
-    gam.oninput();
-  };
+  on('vreset', 'click', () => {
+    if (exp) exp.value = '0';
+    if (gam) gam.value = '1';
+    if (exp) exp.oninput();
+    if (gam) gam.oninput();
+  });
 
-  for (const b of $('vchannels').querySelectorAll('button')) {
+  for (const b of ($('vchannels') || document.createDocumentFragment())
+                   .querySelectorAll('button')) {
     b.onclick = () => {
       V.channel = b.dataset.ch;
       for (const o of $('vchannels').querySelectorAll('button')) {
@@ -195,20 +216,20 @@ function wire() {
     };
   }
 
-  $('vlayer').onchange = () => {
+  on('vlayer', 'change', () => {
     V.layer = $('vlayer').value;
     V.imgW = 0; // dimensions may change with the layer
     scheduleRender(true);
-  };
+  });
 
-  $('vtheme').onclick = async () => {
+  on('vtheme', 'click', async () => {
     const next =
       document.documentElement.getAttribute('data-theme') === 'light'
         ? 'dark'
         : 'light';
     document.documentElement.setAttribute('data-theme', next);
     window.pywebview.api.set_theme(next);
-  };
+  });
 
   // Keys an image viewer is expected to have.
   document.addEventListener('keydown', (e) => {
@@ -364,6 +385,14 @@ function probeAt(e) {
 }
 
 window.addEventListener('pywebviewready', async () => {
+  try {
+    await startup();
+  } catch (e) {
+    fail('Viewer failed to start: ' + (e && e.message ? e.message : e));
+  }
+});
+
+async function startup() {
   wire();
   const init = await window.pywebview.api.init();
   document.documentElement.setAttribute('data-theme', init.theme || 'dark');
@@ -383,4 +412,4 @@ window.addEventListener('pywebviewready', async () => {
   V.layer = sel.value;
 
   await render(true);
-});
+}

@@ -128,6 +128,18 @@ Python side, call the registered handler directly with
 `{"dataTransfer": {"files": [{"name": ..., "pywebviewFullPath": ...}]}}`. The final
 mile needs a human dragging from Explorer.
 
+**`private_mode=True` on `webview.start`, and it must stay that way.** Nothing
+here uses localStorage — preferences live in a JSON file on the Python side — so a
+persistent WebView2 profile buys nothing and costs a cache. After an update that
+cache can serve a **stale `viewer.html` against a fresh `viewer.js`**, and the
+skew is silent: `wire()` throws on an element that no longer exists, `init()` never
+runs, and the window comes up with no name, no layers and no image. It looks like
+the backend died when the backend is fine.
+
+Two defences, keep both: private mode removes the cache, and `on(id, event, fn)`
+in `viewer.js` binds only when the element exists, with `startup()` wrapped in a
+try/catch that reports into `#vmeta`. **A missing control must never be fatal.**
+
 **`ui/app.js`** — `applyDefaults()` sets every control from code at startup.
 WebView2 restores form state from its profile across launches, which silently
 flipped un-premultiply off between runs. Do not rely on `checked` in the markup.

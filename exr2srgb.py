@@ -1168,8 +1168,13 @@ def main():
             and args and os.path.isfile(args[0]):
         open_viewer(args[0])
         icon = os.path.join(BASE_DIR, "app.ico")
+        # private_mode=True: no persistent WebView2 profile. Nothing here uses
+        # localStorage - preferences live in a JSON file on the Python side - and
+        # a persistent profile caches the UI, which after an update can serve a
+        # stale viewer.html against a fresh viewer.js. That skew breaks wire()
+        # on an element that no longer exists and blanks the whole window.
         webview.start(debug=bool(os.environ.get("EXR2SRGB_DEBUG")),
-                      private_mode=False,
+                      private_mode=True,
                       **({"icon": icon} if os.path.exists(icon) else {}))
         return
 
@@ -1204,7 +1209,7 @@ def main():
     icon = os.path.join(BASE_DIR, "app.ico")
     kwargs = {"icon": icon} if os.path.exists(icon) else {}
     webview.start(debug=bool(os.environ.get("EXR2SRGB_DEBUG")),
-                  private_mode=False, **kwargs)
+                  private_mode=True, **kwargs)
 
 
 if __name__ == "__main__":
