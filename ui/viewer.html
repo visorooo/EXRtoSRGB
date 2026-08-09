@@ -1,0 +1,65 @@
+<!doctype html>
+<!--
+  Standalone viewer window. Opened either by double-clicking an .exr (the exe is
+  launched with --view <path>) or from the converter's "Open in window" button.
+  Both paths render this same page, so there is one thing to get right.
+-->
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>EXR viewer</title>
+    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="viewer.css" />
+  </head>
+  <body autocomplete="off">
+    <div class="vapp">
+      <header class="vbar">
+        <span class="vname" id="vname">—</span>
+        <span class="vmeta" id="vmeta"></span>
+        <span class="spacer"></span>
+
+        <select autocomplete="off" id="vlayer" title="Layer"></select>
+
+        <div class="seg" id="vchannels">
+          <button class="is-active" data-ch="rgb">RGB</button>
+          <button data-ch="r">R</button>
+          <button data-ch="g">G</button>
+          <button data-ch="b">B</button>
+          <button data-ch="a">A</button>
+          <button data-ch="luma">Y</button>
+        </div>
+
+        <button class="ghost" id="vfit" title="Fit to window (F)">Fit</button>
+        <button class="ghost" id="v100" title="Actual pixels (1)">1:1</button>
+        <button class="icon" id="vtheme" title="Toggle light / dark">◐</button>
+      </header>
+
+      <!-- wheel to zoom, drag to pan -->
+      <div class="vstage" id="vstage">
+        <img id="vimg" alt="" draggable="false" />
+        <div class="vloading" id="vloading">Loading…</div>
+      </div>
+
+      <footer class="vfoot">
+        <label class="lbl" for="vexp">Exposure</label>
+        <input type="range" id="vexp" min="-6" max="6" step="0.1" value="0"
+               autocomplete="off" />
+        <output class="vnum" id="vexp-val">+0.0</output>
+
+        <label class="lbl" for="vgam">Gamma</label>
+        <input type="range" id="vgam" min="0.2" max="3" step="0.05" value="1"
+               autocomplete="off" />
+        <output class="vnum" id="vgam-val">1.00</output>
+
+        <button class="ghost" id="vreset" title="Reset exposure and gamma">Reset</button>
+        <span class="spacer"></span>
+        <span class="vprobe" id="vprobe"></span>
+        <span class="vzoom" id="vzoom">100%</span>
+      </footer>
+    </div>
+
+    <script src="select.js"></script>
+    <script src="viewer.js"></script>
+  </body>
+</html>

@@ -106,6 +106,21 @@ Results are reported in submission order rather than completion order, so the lo
 still reads like the file list, and a test asserts threaded output is pixel-identical
 to serial.
 
+**Double-click an `.exr` and it opens.** A per-user `HKCU` file association,
+behind an explicit toggle, plus `--view <path>` on the exe — which is what the
+shell runs. The converter's **⧉** button opens the same window in-process for the
+selected file, so both routes render `ui/viewer.html` and there is one thing to
+keep working.
+
+The viewer window has zoom and pan (scroll to zoom at the cursor, F to fit, 1 for
+actual pixels), exposure, gamma, channel isolation, layer switching and the pixel
+probe. Zoom and pan are CSS transforms and never reach Python, so they stay smooth
+at any image size; only pixel changes cross the bridge. Percentages are reported
+against the *source* resolution, so 100% means actual pixels of the original.
+
+**Newly added files are selected automatically**, so a drop previews the thing you
+just dropped.
+
 **Viewer, stage one.** Exposure, gamma, channel isolation (R/G/B/A/luma) and a
 pixel probe, all beside the preview. The point is `ViewerSession`: it decodes a
 layer once and keeps it, plus the downsampled copy per output size, so nothing
@@ -189,65 +204,41 @@ source layer, values above 1.0 included.
 
 ## V3
 
-### 1. EXR viewer — next up
+### 1. Viewer, stage two — the GPU path
 
-Double-click an `.exr` and see it, correctly. **[tev](https://github.com/Tom94/tev)**
-is the reference for what good looks like here, and it is worth being precise about
-what to take from it and what not to.
+Stage one shipped (see above): the layer is decoded once and kept, so exposure,
+gamma, channel and layer changes are interactive. What is left is the part that
+makes it feel like [tev](https://github.com/Tom94/tev) rather than a good preview.
 
-What tev gets right and should be matched:
+Profiled at 900px on a 2160² 80-channel frame, with decoding already cached:
 
-- **Instant.** It opens huge EXRs fast and stays interactive while panning and
-  zooming. Its speed comes from doing the display transform on the GPU, per frame,
-  rather than re-processing pixels on the CPU.
-- **The pixel probe.** Values under the cursor, per channel, in the numbers that
-  actually matter. This is the single feature people tolerate the rest of its UI
-  for.
-- **Channel and layer switching** that is immediate, and **A/B comparison** between
-  images with difference modes.
-- **It never guesses.** Nothing is hidden behind an auto-detect that might be wrong.
+| | |
+|---|---|
+| display transform | 40 ms |
+| **PNG encode** | **108 ms** |
 
-Where it leaves a gap, which is the reason to build at all:
+Encoding is now the bottleneck, and there is no cheap fix: `png:compressionLevel`
+is ignored by OIIO (identical file sizes at every level, measured), and JPEG —
+about 4× faster — cannot carry alpha.
 
-- **No OpenColorIO.** tev has its own tone-mapping controls but cannot apply an
-  ACES view transform, so it cannot show an ACES render the way the renderer meant
-  it. That is exactly the problem `core.py` already solves.
-- **No cryptomatte.** The coloured ID view and ctrl-click picking already built here
-  belong in a viewer far more than in a converter.
+The real answer is to stop producing an image at all. OCIO has a GPU path; feeding
+the cached linear layer to a WebGL canvas as a float texture and running the
+display transform in a shader removes both the transform and the encode from every
+interaction, leaving only the upload. That is how tev is fast, and it also gets
+sequence playback (item 2) essentially for free, since frames stop round-tripping
+through PNG.
 
-Most of the plumbing exists: `read_layer` does fast partial-channel reads,
-`group_layers` handles AOVs, `apply_transform` is the colour pipeline,
-`crypto_preview` and `object_at` are done, and the pywebview shell is built.
+Worth doing after enough real use to know whether 23 fps at 1080p is actually
+limiting. For reviewing stills it may not be.
 
-Still to do:
+Still missing from the viewer regardless of the above:
 
-- **File association** for `.exr`, launching with a path argument. Needs a per-user
-  registry write, so it belongs behind an explicit "Set as default EXR viewer"
-  button rather than an installer side effect.
-- **Zoom / pan** on a canvas, 1:1 and fit.
-- **Exposure and gamma** above the ACES transform — the first two controls anyone
-  reviewing a render reaches for.
-- **Channel isolation** — R / G / B / A on their own.
-- **Pixel probe** showing linear scene values *and* display values.
-- **Sequence playback**, which is item 2 below and shares its cache.
-
-**The honest risk, now measured.** A viewer is a latency problem where the
-converter is a throughput one. One preview frame costs **125 ms at 1080p and 860 ms
-for a 2160² 80-channel file**, and dropping the preview resolution barely helps —
-the cost is reading and decoding the EXR, not the transform.
-
-So the CPU path cannot be made interactive by tuning; it has to stop re-reading.
-Two stages, in order:
-
-1. **Cache the decoded linear layer in memory** and re-run only the display
-   transform when exposure or view changes. That makes the controls interactive
-   without touching the read cost, and is most of the benefit.
-2. **Move the transform to the GPU** via OCIO's GPU path and a WebGL canvas, which
-   is how tev is fast. Considerably more work, and only worth it after stage 1
-   proves the interaction model.
-
-Worth splitting into its own repo if it grows past a single window; the two tools
-share `core.py` and little else.
+- **A/B comparison** between two images, with a difference mode. tev's other
+  genuinely good idea.
+- **Higher-resolution render when zoomed past 1:1.** The window renders at a fixed
+  1600px and shows real pixels beyond that; a 4K plate at 200% is therefore
+  showing interpolated source. Re-rendering the visible crop at full resolution
+  would fix it and is not hard, just not done.
 
 ### 2. Sequence player by the preview *(small — and measured)*
 

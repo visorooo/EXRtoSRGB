@@ -1,0 +1,142 @@
+/*
+ * Viewer window.
+ *
+ * Deliberately quieter than the converter: the image is the interface, so the
+ * chrome is a thin bar top and bottom and everything else is stage. Colours and
+ * motion still come from theme.css / app.css so the two windows read as one app.
+ */
+
+.vapp {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  background: var(--panel-sunken);
+}
+
+.vbar,
+.vfoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+}
+
+.vbar {
+  border-bottom: 1px solid var(--line);
+}
+
+.vfoot {
+  border-top: 1px solid var(--line);
+}
+
+.vbar .spacer,
+.vfoot .spacer {
+  flex: 1;
+}
+
+.vname {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 38ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vmeta {
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vbar select {
+  max-width: 200px;
+}
+
+/* --------------------------------------------------------------------------
+ * Stage
+ * ------------------------------------------------------------------------ */
+
+.vstage {
+  position: relative;
+  overflow: hidden;
+  /* Neutral mid-dark with a checkerboard, so alpha is visible and the surround
+     does not bias how the image reads. */
+  background:
+    repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%)
+      50% / 20px 20px;
+  cursor: grab;
+  display: grid;
+  place-items: center;
+}
+
+.vstage.is-panning {
+  cursor: grabbing;
+}
+
+.vstage img {
+  /* Positioned by transform, so panning never reflows. */
+  transform-origin: 0 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* Crisp at high zoom: past 1:1 the honest thing is to show the pixels rather
+     than invent smooth ones. */
+  image-rendering: pixelated;
+}
+
+.vstage img.smooth {
+  image-rendering: auto;
+}
+
+.vloading {
+  position: absolute;
+  inset: auto;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 140ms var(--ease-ui);
+  pointer-events: none;
+}
+
+.vloading.on {
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+ * Footer readouts
+ * ------------------------------------------------------------------------ */
+
+.vfoot .lbl {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.vfoot input[type='range'] {
+  flex: 0 1 130px;
+}
+
+.vprobe,
+.vzoom {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+}
+
+.vzoom {
+  min-width: 5ch;
+  text-align: right;
+  color: var(--ink-soft);
+}

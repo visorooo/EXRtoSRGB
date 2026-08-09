@@ -47,6 +47,9 @@ Notes:
 Drag `.exr` files or whole folders anywhere onto the window, or use **Add files** /
 **Add folder**. Anything that isn't an `.exr` is ignored.
 
+Whatever you just added is selected automatically, so a dropped file previews
+immediately instead of leaving an older selection in place.
+
 **Image sequences are collapsed automatically.** A folder of
 `shot_010_beauty.0001.exr … .0240.exr` shows up as one row reading
 `shot_010_beauty.####.exr · 240 frames · 1–240`, so a render doesn't bury the rest
@@ -187,6 +190,36 @@ on display values, like a compositor's viewer gamma. None of these re-read the f
 in `%LOCALAPPDATA%\EXRtoSRGB\prefs.json`. Dark is the default and the better choice
 when you're actually judging a render — a light surround biases how you read
 exposure and saturation.
+
+---
+
+## Viewer
+
+**Double-click any `.exr` and it opens.** Tick **Open .exr files with this viewer**
+in Output settings and Windows will hand `.exr` files to the app the way it does
+for PNG or JPEG. The association is written per-user under `HKCU`, so it needs no
+admin rights and changes nothing for anyone else on the machine; untick it to hand
+the file type back. It stays behind a toggle deliberately — a converter that
+silently seizes a file type on first run is not a good neighbour.
+
+You can also hit the **⧉** button above the preview to open the selected file in
+its own window without leaving the converter.
+
+The viewer window gives you:
+
+- **Zoom and pan** — scroll to zoom at the cursor, drag to pan. **F** fits, **1**
+  goes to actual pixels, **+**/**−** step. Past 1:1 it shows real pixels rather
+  than a smoothed guess.
+- **Exposure and gamma**, the same as in the converter, and the same reasoning:
+  exposure in stops before the transform, gamma after.
+- **Channel isolation** — keys **R G B A**, **C** back to colour.
+- **Layer switching** for multi-layer EXRs.
+- **A pixel probe** showing linear scene values under the cursor.
+- **Esc** closes.
+
+Zoom and pan are pure canvas transforms, so they stay smooth whatever the image
+size; only exposure, gamma, channel and layer ask for new pixels, and those come
+off the cached layer rather than re-reading the file.
 
 ---
 

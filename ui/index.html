@@ -164,6 +164,16 @@
                   <!-- text follows the output mode; see suffixFor() in app.js -->
                   <span id="suffix-label">Add “_srgb”</span>
                 </label>
+                <!--
+                  Writes a per-user handler under HKCU. Behind an explicit
+                  toggle: silently taking over a file type is not something a
+                  converter should do on first run.
+                -->
+                <label class="check" id="assoc-wrap" hidden>
+                  <input autocomplete="off" type="checkbox" id="assoc" />
+                  <span class="box"></span>
+                  <span>Open .exr files with this viewer</span>
+                </label>
               </div>
             </div>
 
@@ -229,6 +239,10 @@
                 <button class="is-active" data-size="m" title="Medium preview">M</button>
                 <button data-size="l" title="Large preview">L</button>
               </div>
+              <button class="ghost" id="btn-open-window"
+                      title="Open in a separate viewer window">
+                ⧉
+              </button>
               <button class="ghost" id="btn-refresh" title="Refresh preview">
                 ↻
               </button>

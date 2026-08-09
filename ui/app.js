@@ -314,8 +314,15 @@ window.onDone = (ok, fail, warned) => {
 
 /* Python pushes the file list here after a drop, since the drop handler runs
    on the Python side (that is where the real paths are). */
-window.onFilesChanged = async (entries) => {
+window.onFilesChanged = async (entries, selectLabel) => {
+  const prev = state.entries[state.selected];
   state.entries = entries;
+  // Selecting whatever was just dropped is almost always what is wanted; the
+  // alternative is previewing an unrelated file you added ten minutes ago.
+  let next = -1;
+  if (selectLabel) next = entries.findIndex((e) => e.label === selectLabel);
+  if (next < 0 && prev) next = entries.findIndex((e) => e.label === prev.label);
+  state.selected = next >= 0 ? next : 0;
   if (state.selected >= entries.length) state.selected = 0;
   renderFiles();
   await refreshLayers();
@@ -809,6 +816,17 @@ function wire() {
   };
   $('btn-refresh').onclick = () => renderPreview();
 
+  $('btn-open-window').onclick = async () => {
+    if (!state.entries.length) return;
+    const r = await window.pywebview.api.open_in_window(state.selected);
+    if (!r.ok) log('Could not open viewer: ' + (r.error || ''), 'err');
+  };
+
+  $('assoc').onchange = async () => {
+    const r = await window.pywebview.api.set_association($('assoc').checked);
+    if (!r.ok) $('assoc').checked = !$('assoc').checked;
+  };
+
   $('btn-theme').onclick = () => {
     const next =
       document.documentElement.getAttribute('data-theme') === 'light'
@@ -929,6 +947,12 @@ window.addEventListener('pywebviewready', async () => {
                   { persist: false, rerender: false });
   $('version').textContent = 'v' + init.version;
   await reloadConfigList(init.config);
+
+  const assoc = await window.pywebview.api.association();
+  if (assoc.supported) {
+    $('assoc-wrap').hidden = false;
+    $('assoc').checked = !!assoc.associated;
+  }
   state.ready = true;
   await refreshLayers();
   await refreshCrypto();

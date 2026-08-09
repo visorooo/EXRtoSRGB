@@ -24,6 +24,9 @@ ui/index.html     markup.
 ui/app.js         front end. gathers settings, renders state. no pixel work.
 ui/select.js      custom dropdown, matching invoice-app's Radix select.
 ui/visor-mark.svg the mark on its own, for anywhere it is needed standalone.
+ui/viewer.html    standalone viewer window: double-click, or the in-app button.
+ui/viewer.css     viewer chrome. the image is the interface, so this is thin.
+ui/viewer.js      zoom/pan/probe. transforms are CSS; only pixels come from Python.
 tests/test_core.py
 ```
 
@@ -198,6 +201,31 @@ beside its `.exr` with the same stem. All four live in `applyDefaults()` in
 **ACES 1.2 is not an OCIO built-in.** It predates the built-in registry and exists
 only as a downloadable `config.ocio`, so it cannot be compiled in. That is what the
 `Custom config.ocio…` entry is for; don't try to add ACES 1.2 to `ACES_CONFIGS`.
+
+## The viewer window
+
+`ui/viewer.html` is rendered for **both** entry points, so there is one thing to
+get right: `EXRtoSRGB.exe --view <path>` (what the shell runs on a double-click)
+and the converter's **⧉** button, which calls `open_viewer()` to make a second
+pywebview window in the same process. A second window rather than a second
+process because it opens immediately and shares nothing that would need syncing.
+
+**Zoom and pan never touch Python.** They are CSS transforms on the `<img>`, so
+they stay smooth at any image size. Only exposure, gamma, channel and layer ask
+for pixels, and those come off `ViewerSession`. The render is done once at a
+generous fixed resolution (1600px) and scaled by the browser; past 1:1 the CSS
+switches to `image-rendering: pixelated`, because an image viewer should show the
+pixels rather than invent smooth ones.
+
+Zoom percentages are reported against the **source** resolution, not the render,
+so "100%" means actual pixels of the original.
+
+**File association is per-user, under `HKCU\Software\Classes`.** No elevation,
+nothing changed for other accounts, and `SHChangeNotify` is called afterwards or
+Explorer keeps the old icon and handler until the next sign-in. Unregistering
+only clears `.exr` if it still points at our ProgID, so it cannot stomp on a
+handler someone else set in the meantime. It is behind an explicit toggle by
+design.
 
 ## Cryptomatte
 

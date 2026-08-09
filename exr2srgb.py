@@ -83,6 +83,184 @@ def save_prefs(update):
     return prefs
 
 
+# ----------------------------------------------------------------------------
+# File association
+#
+# Per-user only: everything goes under HKCU\\Software\\Classes, so no elevation
+# is needed and nothing is changed for other accounts. It stays behind an
+# explicit button rather than happening at install or first run - silently
+# taking over a file type is not something a converter should do.
+# ----------------------------------------------------------------------------
+
+PROG_ID = "VISOR.EXRtoSRGB.exr"
+
+
+def _exe_command():
+    """The command Windows should run, quoted, with the path placeholder."""
+    if getattr(sys, "frozen", False):
+        return '"%s" --view "%%1"' % sys.executable
+    # from source, go through the interpreter and this script
+    return '"%s" "%s" --view "%%1"' % (
+        sys.executable, os.path.abspath(__file__))
+
+
+def association_state():
+    """Is .exr currently pointing at us? Returns (associated, current_handler)."""
+    if os.name != "nt":
+        return False, None
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Classes\.exr") as k:
+            current = winreg.QueryValueEx(k, "")[0]
+    except OSError:
+        return False, None
+    return current == PROG_ID, current
+
+
+def set_association(enable):
+    """Register or remove the .exr handler for the current user."""
+    if os.name != "nt":
+        raise RuntimeError("file association is Windows-only")
+    import winreg
+
+    if not enable:
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Classes\%s\shell\open\command" % PROG_ID)
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Classes\%s\shell\open" % PROG_ID)
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Classes\%s\shell" % PROG_ID)
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Classes\%s\DefaultIcon" % PROG_ID)
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Classes\%s" % PROG_ID)
+        except OSError:
+            pass
+        # Only clear .exr if it is still pointing at us.
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Classes\.exr", 0,
+                                winreg.KEY_ALL_ACCESS) as k:
+                if winreg.QueryValueEx(k, "")[0] == PROG_ID:
+                    winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "")
+        except OSError:
+            pass
+        return False
+
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          r"Software\Classes\%s" % PROG_ID) as k:
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "OpenEXR image")
+    icon = os.path.join(BASE_DIR, "app.ico")
+    if getattr(sys, "frozen", False):
+        icon = sys.executable + ",0"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          r"Software\Classes\%s\DefaultIcon" % PROG_ID) as k:
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, icon)
+    with winreg.CreateKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Classes\%s\shell\open\command" % PROG_ID) as k:
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, _exe_command())
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          r"Software\Classes\.exr") as k:
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
+
+    # Tell the shell to re-read associations, or Explorer keeps the old icon
+    # and handler until the next sign-in.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0x0000, None, None)
+    except Exception:
+        pass
+    return True
+
+
+class ViewerApi:
+    """
+    Bridge for the standalone viewer window.
+
+    Deliberately small: one file, one session. The converter's Api is not reused
+    because the viewer has no file list, no batch and no settings to gather.
+    """
+
+    def __init__(self, path):
+        self._window = None
+        self._path = path
+        self._session = core.ViewerSession()
+        self._layers = []
+
+    def _settings(self):
+        prefs = load_prefs()
+        config = prefs.get("view_config") or core.ACES_CONFIGS[
+            core.DEFAULT_CONFIG_LABEL]
+        display = core.default_display(config)
+        return {
+            "config": config,
+            "src": "ACEScg",
+            "display": display,
+            "view": core.view_for(config, display, True),
+            "unpremult": True,
+            "transfer": "display",
+        }
+
+    def init(self):
+        try:
+            self._layers = core.probe_layers(self._path)
+        except Exception:
+            self._layers = []
+        return {
+            "path": self._path,
+            "name": os.path.basename(self._path),
+            "layers": self._layers,
+            "theme": load_prefs().get("theme", "dark"),
+        }
+
+    def render(self, exposure=0.0, gamma=1.0, channel="rgb", layer=None):
+        try:
+            self._session.load(self._path, layer)
+            # Generous fixed resolution: zoom and pan are CSS, so this only has
+            # to be sharp enough for 1:1, not re-rendered as the user moves.
+            uri, w, h = self._session.render(
+                self._settings(), exposure=float(exposure), gamma=float(gamma),
+                channel=str(channel), max_px=1600)
+            full_w, full_h = self._session.size
+            return {"uri": uri, "width": w, "height": h,
+                    "full_width": full_w, "full_height": full_h,
+                    "layer": self._session.layer}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def probe(self, u, v):
+        try:
+            return self._session.sample(float(u), float(v)) or {}
+        except Exception:
+            return {}
+
+    def set_theme(self, theme):
+        if theme in ("dark", "light"):
+            save_prefs({"theme": theme})
+        return True
+
+    def close_window(self):
+        if self._window:
+            self._window.destroy()
+        return True
+
+
+def open_viewer(path, blocking=True):
+    """Create a viewer window for one EXR."""
+    api = ViewerApi(os.path.abspath(path))
+    bg = "#f5f4f1" if load_prefs().get("theme") == "light" else "#242322"
+    win = webview.create_window(
+        "%s · EXR → sRGB" % os.path.basename(path),
+        os.path.join(UI_DIR, "viewer.html"),
+        js_api=api, width=1100, height=780, min_size=(560, 420),
+        background_color=bg, text_select=False)
+    api._window = win
+    return win
+
+
 class Api:
     """
     The bridge exposed to JavaScript as window.pywebview.api.
@@ -101,6 +279,7 @@ class Api:
         self._pick_state = None   # subsampled ID plane for ctrl-click picking
         self._pick_key = None
         self._viewer = core.ViewerSession()
+        self._last_added = None
 
     # -- helpers ----------------------------------------------------------
 
@@ -133,17 +312,28 @@ class Api:
             })
         return out
 
-    def _push_files(self):
+    def _push_files(self, select_label=None):
+        """
+        Hand the grouped list to the UI.
+
+        `select_label` names the entry to select - the one just added, so a drop
+        lands on the file that was dropped rather than leaving an older
+        selection in place.
+        """
         import json
         payload = json.dumps(self._entries_payload())
         if self._window:
             try:
-                self._window.evaluate_js("window.onFilesChanged(%s)" % payload)
+                self._window.evaluate_js(
+                    "window.onFilesChanged(%s, %s)"
+                    % (payload, json.dumps(select_label)))
             except Exception:
                 pass
 
     def _add_paths(self, paths, recurse=True):
+        """Add files. Returns (added, label of the last entry added)."""
         added = 0
+        last = None
         for p in paths:
             if not p:
                 continue
@@ -153,11 +343,21 @@ class Api:
                     if f not in self.files:
                         self.files.append(f)
                         added += 1
+                        last = f
             elif p.lower().endswith(".exr") and p not in self.files:
                 self.files.append(p)
                 added += 1
+                last = p
         self.files.sort()
         self._regroup()
+        label = None
+        if last:
+            for e in self.entries:
+                paths = e["paths"] if e["kind"] == "sequence" else [e["path"]]
+                if last in paths:
+                    label = e["label"]
+                    break
+        self._last_added = label
         return added
 
     def _entry_paths(self, index):
@@ -269,6 +469,43 @@ class Api:
             return {"layers": [], "error": str(e)}
 
     # -- viewer -----------------------------------------------------------
+
+    def open_in_window(self, index):
+        """
+        Open the selected file in its own viewer window.
+
+        A second pywebview window in this process rather than a new process:
+        it opens immediately and shares nothing that would need syncing.
+        Double-clicking an .exr takes the other route and launches the exe with
+        --view, but both end up rendering ui/viewer.html.
+        """
+        paths = self._entry_paths(index)
+        if not paths:
+            return {"ok": False, "error": "nothing selected"}
+        try:
+            open_viewer(paths[0])
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def association(self):
+        """Current .exr handler state, for the settings toggle."""
+        if os.name != "nt":
+            return {"supported": False, "associated": False}
+        associated, current = association_state()
+        return {"supported": True, "associated": associated,
+                "current": current or ""}
+
+    def set_association(self, enable):
+        try:
+            state = set_association(bool(enable))
+            self._js("onLog",
+                     "EXR files now open in this viewer." if state
+                     else "Removed the .exr association.", "ok")
+            return {"ok": True, "associated": state}
+        except Exception as e:
+            self._js("onLog", "Could not change file association: %s" % e, "err")
+            return {"ok": False, "error": str(e)}
 
     def view(self, index, s, exposure=0.0, gamma=1.0, channel="rgb",
              max_px=512):
@@ -416,7 +653,7 @@ class Api:
         if res:
             n = self._add_paths(res)
             self._js("onLog", "Added %d file(s)." % n, "dim")
-        self._push_files()
+        self._push_files(getattr(self, "_last_added", None))
         return True
 
     def add_folder_dialog(self):
@@ -424,7 +661,7 @@ class Api:
         if res:
             n = self._add_paths(res)
             self._js("onLog", "Added %d file(s)." % n, "dim")
-        self._push_files()
+        self._push_files(getattr(self, "_last_added", None))
         return True
 
     def pick_outdir(self):
@@ -564,7 +801,7 @@ def attach_dnd(window, api):
         if skipped:
             api._js("onLog",
                     "Ignored %d file(s) - only .exr is accepted" % skipped, "warn")
-        api._push_files()
+        api._push_files(getattr(api, "_last_added", None))
 
     # Only `drop` is handled here. dragenter/dragover/dragleave are handled in
     # JS (see wireDrag in ui/app.js) because they must call preventDefault
@@ -592,6 +829,18 @@ def attach_dnd(window, api):
 
 
 def main():
+    # `EXRtoSRGB.exe --view <path>` is what the shell runs on a double-click.
+    # A bare path is accepted too, since that is what some launchers send.
+    args = [a for a in sys.argv[1:] if a != "--view"]
+    if ("--view" in sys.argv or (args and args[0].lower().endswith(".exr"))) \
+            and args and os.path.isfile(args[0]):
+        open_viewer(args[0])
+        icon = os.path.join(BASE_DIR, "app.ico")
+        webview.start(debug=bool(os.environ.get("EXR2SRGB_DEBUG")),
+                      private_mode=False,
+                      **({"icon": icon} if os.path.exists(icon) else {}))
+        return
+
     api = Api()
     # Match the saved theme so the window does not flash the wrong colour before
     # the page has applied it. --panel-sunken in each scale.
