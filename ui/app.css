@@ -1172,6 +1172,87 @@ input[type='range']:active::-webkit-slider-thumb {
 }
 
 /* --------------------------------------------------------------------------
+ * Colour swatch and eyedropper
+ *
+ * Both windows report the pixel under the cursor the same way, so the pieces
+ * live here rather than once per window.
+ * ------------------------------------------------------------------------ */
+
+/* A checkerboard behind it, so a low-alpha sample does not read as a colour
+   it is not. */
+.swatch {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background-image:
+    repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 8px 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.swatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--swatch, transparent);
+}
+
+.swatch:hover {
+  border-color: var(--ink-faint);
+}
+
+/* Locked means the readout stopped following the cursor, so it needs to look
+   deliberately different from a live one. */
+.swatch.locked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.eyedrop {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink-faint);
+}
+
+.eyedrop:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.eyedrop[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--panel-sunken);
+}
+
+/* Crosshair while armed - a colour picker that keeps the arrow cursor gives no
+   sign it is waiting for a click. */
+.picking,
+.picking img {
+  cursor: crosshair;
+}
+
+.probe-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.probe-hex {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  min-width: 8ch;
+}
+
+/* --------------------------------------------------------------------------
  * Shortcuts sheet
  *
  * Shared by both windows: the converter and the viewer each have one, and the

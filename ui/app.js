@@ -351,6 +351,13 @@ window.onDragState = (on) => {
 
 const viewer = { exposure: 0, gamma: 1, channel: 'rgb' };
 
+/*
+ * picking - the eyedropper is armed and waiting for a click.
+ * locked  - a reading was taken and must stop following the cursor.
+ * hex     - whatever the swatch is currently showing, for the copy.
+ */
+const probe = { picking: false, locked: false, hex: null };
+
 function fmtStops(v) {
   return (v > 0 ? '+' : '') + v.toFixed(1);
 }
@@ -389,30 +396,117 @@ function wireViewer() {
     onGamma();
   };
 
-  // Pixel probe. Values come from the full-resolution layer, so the number is
-  // the real pixel rather than something resampled for the preview.
+  wireProbe();
+}
+
+/*
+ * The pixel under the cursor, reported twice on purpose.
+ *
+ * The text is the linear scene value, read from the full-resolution layer so it
+ * is the real pixel rather than something resampled for the preview. The chip
+ * and the hex are the display colour - what is actually on screen after
+ * exposure, gamma and the view transform - because that is the only thing a hex
+ * code can mean to anywhere you would paste it.
+ */
+function wireProbe() {
   const box = $('preview-box');
+  const swatch = $('pv-swatch');
   let probeTimer = null;
-  box.addEventListener('mousemove', (e) => {
+
+  const paint = (p) => {
+    const lin = `${p.r.toFixed(4)}  ${p.g.toFixed(4)}  ${p.b.toFixed(4)}`;
+    const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
+    $('probe').textContent =
+      `x ${p.x}  y ${p.y}\nlinear  ${lin}\nalpha   ${a}`;
+    if (!p.hex) return;
+    probe.hex = p.hex;
+    $('pv-hex').textContent = p.hex;
+    swatch.hidden = false;
+    // alpha kept on the chip, so a soft edge does not read as a solid colour
+    const al = p.a === null || p.a === undefined
+      ? 1 : Math.min(1, Math.max(0, p.a));
+    swatch.style.setProperty('--swatch', `rgb(${p.dr} ${p.dg} ${p.db} / ${al})`);
+  };
+
+  const at = (e) => {
     const img = box.querySelector('img');
-    if (!img || crypto.mode === 'crypto') return;
+    if (!img) return null;
     const r = img.getBoundingClientRect();
     const u = (e.clientX - r.left) / r.width;
     const v = (e.clientY - r.top) / r.height;
-    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    return u < 0 || u > 1 || v < 0 || v > 1 ? null : [u, v];
+  };
+
+  const read = async (u, v) =>
+    window.pywebview.api.probe(state.selected, u, v, settings(),
+                               viewer.exposure, viewer.gamma);
+
+  box.addEventListener('mousemove', (e) => {
+    if (crypto.mode === 'crypto' || probe.locked) return;
+    const uv = at(e);
+    if (!uv) return;
     clearTimeout(probeTimer);
     probeTimer = setTimeout(async () => {
-      const p = await window.pywebview.api.probe(state.selected, u, v);
-      if (!p || p.r === undefined) return;
-      const lin = `${p.r.toFixed(4)}  ${p.g.toFixed(4)}  ${p.b.toFixed(4)}`;
-      const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
-      $('probe').textContent =
-        `x ${p.x}  y ${p.y}\nlinear  ${lin}\nalpha   ${a}`;
+      const p = await read(uv[0], uv[1]);
+      if (p && p.r !== undefined && !probe.locked) paint(p);
     }, 40);
   });
+
   box.addEventListener('mouseleave', () => {
+    if (probe.locked) return;
     $('probe').textContent = 'Hover the image for pixel values';
+    $('pv-hex').textContent = '';
+    swatch.hidden = true;
   });
+
+  // Arming is deliberate: hover already shows the colour, and what the
+  // eyedropper adds is holding one still long enough to use it.
+  $('pv-pick').onclick = () => setPicking(!probe.picking);
+
+  box.addEventListener('click', async (e) => {
+    // Ctrl / Alt belong to cryptomatte picking, which was here first.
+    if (!probe.picking || e.ctrlKey || e.metaKey || e.altKey) return;
+    const uv = at(e);
+    if (!uv) return;
+    const p = await read(uv[0], uv[1]);
+    if (!p || p.r === undefined) return;
+    probe.locked = false;          // paint() refuses to draw while locked
+    paint(p);
+    probe.locked = true;
+    swatch.classList.add('locked');
+    setPicking(false);
+    if (p.hex) {
+      await window.pywebview.api.copy_text(p.hex);
+      log(`Copied ${p.hex}`, 'ok');
+    }
+  });
+
+  swatch.onclick = async () => {
+    if (!probe.hex) return;
+    await window.pywebview.api.copy_text(probe.hex);
+    log(`Copied ${probe.hex}`, 'ok');
+  };
+}
+
+/*
+ * Arm or disarm the eyedropper.
+ *
+ * Deliberately does NOT release a held reading: taking a sample disarms, and if
+ * that also unlocked, the reading would start following the cursor again the
+ * moment it was taken - which is the one thing the eyedropper exists to stop.
+ * Arming again does unlock, because that is a request to pick a new one.
+ */
+function setPicking(on) {
+  probe.picking = on;
+  $('pv-pick').setAttribute('aria-pressed', String(on));
+  $('preview-box').classList.toggle('picking', on);
+  if (on) unlockProbe();
+}
+
+/* Let the readout follow the cursor again. */
+function unlockProbe() {
+  probe.locked = false;
+  $('pv-swatch').classList.remove('locked');
 }
 
 /* ---------------------------------------------------------------------------
@@ -923,11 +1017,22 @@ function wireKeys() {
       e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT';
 
     if (e.key === 'Escape') {
+      // Most-recent thing first: the sheet, then a held colour reading, and
+      // only then the convert. Cancelling a batch by accident is expensive.
       if (!sheet.hidden) {
         show(false);
+      } else if (probe.picking || probe.locked) {
+        setPicking(false);
+        unlockProbe();
       } else if (state.converting) {
         $('btn-cancel').click();
       }
+      return;
+    }
+
+    if ((e.key === 'e' || e.key === 'E') && !typing && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      setPicking(!probe.picking);
       return;
     }
 

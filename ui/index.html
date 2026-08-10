@@ -309,6 +309,28 @@
                   Reset
                 </button>
               </div>
+              <!--
+                The colour under the cursor. Two readings deliberately: the
+                probe text is the linear pixel, the chip and hex are the display
+                colour after exposure, gamma and the view transform.
+              -->
+              <div class="probe-row">
+                <button class="swatch" id="pv-swatch" hidden
+                        title="Click to copy the hex"></button>
+                <span class="probe-hex" id="pv-hex"></span>
+                <span class="spacer"></span>
+                <button class="icon eyedrop" id="pv-pick" aria-pressed="false"
+                        title="Eyedropper — click a pixel to lock and copy it (E)"
+                        aria-label="Eyedropper">
+                  <svg width="14" height="14" viewBox="0 0 15 15" fill="none"
+                       stroke="currentColor" stroke-width="1.2"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.4 1.9a1.9 1.9 0 0 1 2.7 2.7l-1.2 1.2-2.7-2.7 1.2-1.2Z" />
+                    <path d="M9.2 3.1 3.6 8.7l-.5 2.9 2.9-.5 5.6-5.6" />
+                    <path d="m2.3 12.7.8-.8" />
+                  </svg>
+                </button>
+              </div>
               <div class="probe" id="probe">Hover the image for pixel values</div>
             </div>
             <div class="preview-meta">
@@ -419,6 +441,7 @@
                 <dt>Esc</dt><dd>Cancel a running convert</dd>
 
                 <div class="grp">Preview</div>
+                <dt>E</dt><dd>Eyedropper — click a pixel to lock and copy it</dd>
                 <dt>Ctrl + click</dt><dd>Add the object under the cursor</dd>
                 <dt>Alt + click</dt><dd>Remove it again</dd>
                 <dt>Drag divider</dt><dd>Resize the preview</dd>

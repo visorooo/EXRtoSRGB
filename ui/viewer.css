@@ -141,39 +141,8 @@
   color: var(--ink-soft);
 }
 
-/* --------------------------------------------------------------------------
- * Colour swatch
- * ------------------------------------------------------------------------ */
-
-/* A checkerboard behind it, so a low-alpha sample does not read as a colour
-   it is not. */
-.swatch {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border-radius: 4px;
-  border: 1px solid var(--line-strong);
-  background-image:
-    repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
-  background-size: 8px 8px;
-  position: relative;
-  overflow: hidden;
-}
-
-.swatch::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--swatch, transparent);
-}
-
-.swatch:hover {
-  border-color: var(--ink-faint);
-}
-
-/* The shortcuts sheet itself lives in app.css - both windows have one, and two
-   copies of the same rules would drift. */
+/* The colour swatch, the eyedropper and the shortcuts sheet all live in
+   app.css - both windows have them, and two copies would drift. */
 
 /* --------------------------------------------------------------------------
  * Convert menu

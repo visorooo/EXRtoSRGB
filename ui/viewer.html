@@ -69,6 +69,18 @@
         <!-- click to copy the hex; the chip is the colour under the cursor -->
         <button class="swatch" id="vswatch" hidden
                 title="Click to copy the hex"></button>
+        <!-- holds one reading still, so it can be read off and pasted -->
+        <button class="icon eyedrop" id="vpick" aria-pressed="false"
+                title="Eyedropper — click a pixel to lock and copy it (E)"
+                aria-label="Eyedropper">
+          <svg width="14" height="14" viewBox="0 0 15 15" fill="none"
+               stroke="currentColor" stroke-width="1.2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.4 1.9a1.9 1.9 0 0 1 2.7 2.7l-1.2 1.2-2.7-2.7 1.2-1.2Z" />
+            <path d="M9.2 3.1 3.6 8.7l-.5 2.9 2.9-.5 5.6-5.6" />
+            <path d="m2.3 12.7.8-.8" />
+          </svg>
+        </button>
         <span class="vprobe" id="vprobe"></span>
         <button class="ghost" id="vkeys" title="Keyboard shortcuts (?)">?</button>
         <span class="vzoom" id="vzoom">100%</span>
@@ -89,6 +101,7 @@
             <dt>Drag</dt><dd>Pan</dd>
             <dt>R G B A</dt><dd>Isolate a channel</dd>
             <dt>C</dt><dd>Back to colour</dd>
+            <dt>E</dt><dd>Eyedropper — click a pixel to lock and copy it</dd>
             <dt>Click swatch</dt><dd>Copy hex under the cursor</dd>
             <dt>?</dt><dd>This list</dd>
             <dt>Esc</dt><dd>Close the window</dd>

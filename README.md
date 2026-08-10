@@ -191,7 +191,17 @@ picking, where small objects are hard to hit accurately. The width is remembered
 
 **Viewer controls** — **exposure** in stops, **gamma**, and channel isolation
 (**RGB / R / G / B / A / Y**), with a pixel probe reading linear scene values under
-the cursor. Exposure is applied in linear before the display transform, so it
+the cursor.
+
+Beside the probe is a **colour chip and the hex of what's on screen**, the same
+pair the viewer window shows — the linear numbers are the pixel in the file, the
+hex is the display colour after exposure, gamma and the ACES curve. Click the chip
+to copy it. The **eyedropper** next to it (or **E**) locks one reading in place so
+it stops following the cursor, copying the hex as it does; **Esc** releases. The
+chip is drawn over a checkerboard and carries the sampled alpha, so a soft edge
+doesn't read as a solid colour.
+
+Exposure is applied in linear before the display transform, so it
 behaves like a camera stop rather than a brightness slider; gamma is applied after,
 on display values, like a compositor's viewer gamma. None of these re-read the file
 — the decoded layer is cached — so they respond immediately.
@@ -243,6 +253,11 @@ The viewer window gives you:
   readings are deliberately different things: the linear value is the pixel in the
   file, the hex is the display colour after exposure, gamma and the ACES curve —
   which is what a hex code means anywhere you'd paste one.
+- **An eyedropper** beside the chip, or **E**. Hovering already shows the colour;
+  what the eyedropper adds is holding one still. Click a pixel and the reading
+  locks — the chip outlines in the accent colour, stops following the cursor, and
+  the hex goes to the clipboard. **Esc** releases it. Dragging while armed still
+  pans, so it never eats a pan.
 - **Convert** — the same five presets as the right-click menu, applied to the open
   file **and the layer you're looking at**, so exporting while an AOV is on screen
   writes that AOV, named for it, instead of quietly writing the beauty.
@@ -268,6 +283,7 @@ interface.
 | `Ctrl` `O` | Add files |
 | `Ctrl` `↵` | Convert |
 | `Esc` | Cancel a running convert |
+| `E` | Eyedropper — click a pixel to lock and copy its hex |
 | `Ctrl` + click | Add the object under the cursor to the matte |
 | `Alt` + click | Remove it again |
 | `←` `→` | Resize the preview (with the divider focused) |
@@ -281,6 +297,7 @@ interface.
 | `+` `−` | Zoom in / out |
 | `R` `G` `B` `A` | Isolate a channel |
 | `C` | Back to colour |
+| `E` | Eyedropper — click a pixel to lock and copy its hex |
 | `Esc` | Close the window |
 
 ---

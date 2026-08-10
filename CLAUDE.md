@@ -101,6 +101,23 @@ not interchangeable — a hex built from the linear value reads near-black for
 anything normally exposed and matches nothing pasted anywhere else. Tests assert
 that exposure moves the hex and leaves the linear reading alone.
 
+**Both windows show the chip, and both have the eyedropper.** `Api.probe` takes the
+settings for the same reason `ViewerApi.probe` does — without them `sample()` skips
+the display chain and there is no hex to show.
+
+**Arming must not be the thing that unlocks.** Taking a sample disarms the
+eyedropper, so if disarming also released the lock the reading would resume
+following the cursor the instant it was taken — which is the one behaviour the
+eyedropper exists to prevent. `setPicking(false)` therefore leaves `locked` alone;
+`unlockProbe()` is separate, and `setPicking(true)` calls it because arming again is
+a request for a new sample. This was wrong first time round and the symptom is
+subtle: the pick appears to work, then quietly drifts on the next mouse move.
+
+**In the viewer a pick is a `pointerup` that did not travel.** Pan and pick are the
+same gesture otherwise, so `travel` accumulates during the press and a pick is
+refused past 4px. Anything driving this synthetically must send the `pointerdown`
+too, or `travel` is stale and nothing happens.
+
 **`exr2srgb.py`** — `class Api` is the JS bridge. Two non-obvious constraints:
 
 - **Every public attribute of `Api` gets introspected by pywebview.** `self.window`

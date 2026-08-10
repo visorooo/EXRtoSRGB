@@ -149,14 +149,26 @@ function wire() {
   let panning = false;
   let sx = 0;
   let sy = 0;
+  // How far the pointer travelled while down, so a pick can be told from the
+  // end of a pan - both finish with a pointerup in the same place otherwise.
+  let travel = 0;
+  let px = 0;
+  let py = 0;
   stage.addEventListener('pointerdown', (e) => {
     panning = true;
     sx = e.clientX - V.x;
     sy = e.clientY - V.y;
+    travel = 0;
+    px = e.clientX;
+    py = e.clientY;
     stage.classList.add('is-panning');
-    stage.setPointerCapture(e.pointerId);
+    try {
+      stage.setPointerCapture(e.pointerId);
+    } catch (_) {
+      /* capture is an optimisation - panning still works without it */
+    }
   });
-  stage.addEventListener('pointerup', (e) => {
+  stage.addEventListener('pointerup', async (e) => {
     panning = false;
     stage.classList.remove('is-panning');
     try {
@@ -164,8 +176,12 @@ function wire() {
     } catch (_) {
       /* capture may already be gone */
     }
+    if (travel < 4) await pickAt(e);
   });
   stage.addEventListener('pointermove', async (e) => {
+    travel += Math.abs(e.clientX - px) + Math.abs(e.clientY - py);
+    px = e.clientX;
+    py = e.clientY;
     if (panning) {
       V.x = e.clientX - sx;
       V.y = e.clientY - sy;
@@ -191,6 +207,7 @@ function wire() {
     toast(`Copied ${lastHex}`);
   });
 
+  on('vpick', 'click', () => setPicking(!picking));
   on('vkeys', 'click', () => toggleSheet());
   on('vsheet-close', 'click', () => toggleSheet(false));
   on('vsheet', 'click', (e) => {
@@ -252,9 +269,13 @@ function wire() {
     else if (k === '+' || k === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
     else if (k === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.25);
     else if (k === '?' || (k === '/' && e.shiftKey)) toggleSheet();
+    else if (k === 'e') setPicking(!picking);
     else if (k === 'escape') {
+      // Release a held colour before closing the window - Escape should undo
+      // the last thing, not quit out from under a reading being copied.
       if (!$('vsheet').hidden) toggleSheet(false);
       else if (menuEl) closeMenu();
+      else if (picking || locked) { setPicking(false); unlockProbe(); }
       else window.pywebview.api.close_window();
     }
     else if (['r', 'g', 'b', 'a'].includes(k)) {
@@ -385,34 +406,91 @@ async function runConvert(preset) {
 
 let probeTimer = null;
 let lastHex = null;
-function probeAt(e) {
+// picking: armed and waiting for a click. locked: a reading is being held.
+let picking = false;
+let locked = false;
+
+function paintProbe(p) {
+  const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
+  $('vprobe').textContent =
+    `${p.x},${p.y}   ${p.r.toFixed(4)} ${p.g.toFixed(4)} ${p.b.toFixed(4)}` +
+    `   a ${a}   ${p.hex || ''}`;
+  if (!p.hex) return;
+  const sw = $('vswatch');
+  sw.hidden = false;
+  // alpha kept on the chip so a soft edge does not read as solid colour
+  const al = p.a === null || p.a === undefined ? 1 : Math.min(1, Math.max(0, p.a));
+  sw.style.setProperty('--swatch', `rgb(${p.dr} ${p.dg} ${p.db} / ${al})`);
+  lastHex = p.hex;
+}
+
+function uvAt(e) {
   const img = $('vimg');
-  if (!img.src) return;
+  if (!img.src) return null;
   const r = img.getBoundingClientRect();
   const u = (e.clientX - r.left) / r.width;
   const v = (e.clientY - r.top) / r.height;
-  if (u < 0 || u > 1 || v < 0 || v > 1) {
+  return u < 0 || u > 1 || v < 0 || v > 1 ? null : [u, v];
+}
+
+function probeAt(e) {
+  if (locked) return;
+  const uv = uvAt(e);
+  if (!uv) {
     $('vprobe').textContent = '';
     return;
   }
   clearTimeout(probeTimer);
   probeTimer = setTimeout(async () => {
-    const p = await window.pywebview.api.probe(u, v, V.exposure, V.gamma);
-    if (!p || p.r === undefined) return;
-    const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
-    $('vprobe').textContent =
-      `${p.x},${p.y}   ${p.r.toFixed(4)} ${p.g.toFixed(4)} ${p.b.toFixed(4)}` +
-      `   a ${a}   ${p.hex || ''}`;
-    if (p.hex) {
-      const sw = $('vswatch');
-      sw.hidden = false;
-      // alpha kept on the chip so a soft edge does not read as solid colour
-      const al = p.a === null || p.a === undefined ? 1 : Math.min(1, Math.max(0, p.a));
-      sw.style.setProperty('--swatch',
-        `rgb(${p.dr} ${p.dg} ${p.db} / ${al})`);
-      lastHex = p.hex;
-    }
+    const p = await window.pywebview.api.probe(uv[0], uv[1], V.exposure, V.gamma);
+    if (p && p.r !== undefined && !locked) paintProbe(p);
   }, 35);
+}
+
+/*
+ * Arm or disarm the eyedropper.
+ *
+ * Disarming must not release a held reading - taking a sample disarms, and if
+ * that unlocked too, the reading would resume following the cursor the instant
+ * it was taken. Arming again does unlock, being a request for a new one.
+ */
+function setPicking(on) {
+  picking = on;
+  const b = $('vpick');
+  if (b) b.setAttribute('aria-pressed', String(on));
+  $('vstage').classList.toggle('picking', on);
+  if (on) unlockProbe();
+}
+
+/* Let the readout follow the cursor again. */
+function unlockProbe() {
+  locked = false;
+  const sw = $('vswatch');
+  if (sw) sw.classList.remove('locked');
+}
+
+/*
+ * Take and hold one reading.
+ *
+ * Returns true if it consumed the click, so the stage can tell a sample from
+ * the start of a pan.
+ */
+async function pickAt(e) {
+  if (!picking) return false;
+  const uv = uvAt(e);
+  if (!uv) return false;
+  const p = await window.pywebview.api.probe(uv[0], uv[1], V.exposure, V.gamma);
+  if (!p || p.r === undefined) return false;
+  locked = false;                  // paintProbe is refused while locked
+  paintProbe(p);
+  locked = true;
+  $('vswatch').classList.add('locked');
+  setPicking(false);
+  if (p.hex) {
+    await window.pywebview.api.copy_text(p.hex);
+    toast(`Copied ${p.hex}`);
+  }
+  return true;
 }
 
 window.addEventListener('pywebviewready', async () => {

@@ -971,13 +971,21 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
-    def probe(self, index, u, v):
-        """Linear scene values under the cursor, from the full-res layer."""
+    def probe(self, index, u, v, s=None, exposure=0.0, gamma=1.0):
+        """
+        Values under the cursor, from the full-res layer.
+
+        Takes the settings so the reading carries the display colour and hex as
+        well as the linear pixel - the same pair the viewer reports, and for the
+        same reason: a hex has to be the colour on screen.
+        """
         paths = self._entry_paths(index)
         if not paths:
             return {}
         try:
-            return self._viewer.sample(float(u), float(v)) or {}
+            settings = self._settings(s) if s else None
+            return self._viewer.sample(float(u), float(v), settings,
+                                       float(exposure), float(gamma)) or {}
         except Exception:
             return {}
 
