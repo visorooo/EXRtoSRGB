@@ -278,6 +278,20 @@
             </div>
 
             <!--
+              Frame stepping for a sequence. Only stepping, deliberately: one
+              preview frame costs 125 ms at 1080p and 860 ms on a heavy
+              multi-AOV file, and that is decoding, not the transform - so this
+              is a scrub, not playback.
+            -->
+            <div class="frames" id="frames" hidden>
+              <button class="ghost" id="fr-prev" title="Previous frame (,)">‹</button>
+              <input type="range" id="fr-slider" min="0" max="0" step="1"
+                     value="0" autocomplete="off" aria-label="Frame" />
+              <button class="ghost" id="fr-next" title="Next frame (.)">›</button>
+              <span class="fr-count" id="fr-count"></span>
+            </div>
+
+            <!--
               Viewer controls. Exposure is applied in linear before the display
               transform, so it behaves like a camera stop; gamma is applied
               after, on display values, like a compositor's viewer gamma.

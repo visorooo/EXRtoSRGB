@@ -1171,6 +1171,39 @@ input[type='range']:active::-webkit-slider-thumb {
 }
 
 /* --------------------------------------------------------------------------
+ * Sequence frame strip
+ * ------------------------------------------------------------------------ */
+
+.frames {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 0 2px;
+}
+
+.frames input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.frames button {
+  flex: none;
+  min-width: 26px;
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.fr-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
  * Colour swatch and eyedropper
  *
  * Both windows report the pixel under the cursor the same way, so the pieces

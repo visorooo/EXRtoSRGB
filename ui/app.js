@@ -11,6 +11,9 @@ const $ = (id) => document.getElementById(id);
 const state = {
   entries: [], // grouped file entries from core.group_sequences
   selected: 0,
+  // Which frame of a sequence entry is being previewed. Reset on selection,
+  // because frame 87 of one run means nothing in another.
+  frame: 0,
   converting: false,
   ready: false,
 };
@@ -167,6 +170,7 @@ function renderFiles() {
 
     row.onclick = () => {
       state.selected = i;
+      state.frame = 0;
       renderFiles();
       refreshCrypto();
       schedulePreview();
@@ -252,7 +256,7 @@ async function renderPreview() {
     }
     const r = await window.pywebview.api.view(
       state.selected, settings(), viewer.exposure, viewer.gamma,
-      viewer.channel, previewPx());
+      viewer.channel, previewPx(), state.frame);
     if (token !== previewToken) return; // a newer request won
     if (r.error) {
       $('preview-box').innerHTML =
@@ -266,6 +270,7 @@ async function renderPreview() {
     $('preview-layer').textContent = r.layer === '' ? 'R,G,B' : r.layer;
     $('preview-dims').textContent = `${r.full_width} × ${r.full_height}`;
     $('preview-note').textContent = r.note || '';
+    syncFrames(r);
   } catch (err) {
     if (token === previewToken) {
       $('preview-box').innerHTML =
@@ -278,6 +283,55 @@ function escapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+/* ---------------------------------------------------------------------------
+ * Sequence frames
+ *
+ * Stepping only, and that is a measurement rather than a shortcut: one preview
+ * frame costs 125 ms at 1080p and 860 ms on a 2160 square 80-channel file, and
+ * halving the preview size barely moves either - the cost is decoding the EXR.
+ * Playback would need the frames pre-rendered into a cache, which is the same
+ * latency problem the viewer's GPU path solves, so it waits for that.
+ * ------------------------------------------------------------------------ */
+
+function syncFrames(r) {
+  const strip = $('frames');
+  const n = r && r.frames ? r.frames : 1;
+  strip.hidden = n < 2;
+  if (strip.hidden) return;
+  const slider = $('fr-slider');
+  slider.max = String(n - 1);
+  slider.value = String(r.frame);
+  state.frame = r.frame;
+  $('fr-count').textContent = `${r.frame + 1} / ${n}`;
+  $('fr-prev').disabled = r.frame <= 0;
+  $('fr-next').disabled = r.frame >= n - 1;
+}
+
+function stepFrame(d) {
+  const strip = $('frames');
+  if (strip.hidden) return;
+  const max = parseInt($('fr-slider').max, 10) || 0;
+  const next = Math.max(0, Math.min(max, state.frame + d));
+  if (next === state.frame) return;
+  state.frame = next;
+  $('fr-slider').value = String(next);
+  $('fr-count').textContent = `${next + 1} / ${max + 1}`;
+  schedulePreview();
+}
+
+function wireFrames() {
+  $('fr-prev').onclick = () => stepFrame(-1);
+  $('fr-next').onclick = () => stepFrame(1);
+  // 'input' rather than 'change', so dragging scrubs; schedulePreview already
+  // debounces, so a fast drag collapses into one render.
+  $('fr-slider').oninput = () => {
+    state.frame = parseInt($('fr-slider').value, 10) || 0;
+    const max = parseInt($('fr-slider').max, 10) || 0;
+    $('fr-count').textContent = `${state.frame + 1} / ${max + 1}`;
+    schedulePreview();
+  };
 }
 
 /* ---------------------------------------------------------------------------
@@ -331,6 +385,12 @@ window.onFilesChanged = async (entries, selectLabel) => {
   if (next < 0 && prev) next = entries.findIndex((e) => e.label === prev.label);
   state.selected = next >= 0 ? next : 0;
   if (state.selected >= entries.length) state.selected = 0;
+  // Compared by label, not by index: adding a file can leave the selection on
+  // the same row number while that row is now a different sequence, and frame
+  // 87 of one run means nothing in another. A drop also changes the selection
+  // without going through the row click that would otherwise reset it.
+  const now = entries[state.selected];
+  if (!prev || !now || prev.label !== now.label) state.frame = 0;
   renderFiles();
   await refreshLayers();
   await refreshCrypto();
@@ -1049,6 +1109,7 @@ function wire() {
     $(id).onchange = schedulePreview;
   }
 
+  wireFrames();
   wireKeys();
 }
 
@@ -1094,6 +1155,13 @@ function wireKeys() {
     if ((e.key === 'e' || e.key === 'E') && !typing && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       setPicking(!probe.picking);
+      return;
+    }
+
+    // , and . step frames, the way every NLE does it
+    if ((e.key === ',' || e.key === '.') && !typing) {
+      e.preventDefault();
+      stepFrame(e.key === '.' ? 1 : -1);
       return;
     }
 

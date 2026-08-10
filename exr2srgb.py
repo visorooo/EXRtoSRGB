@@ -957,13 +957,17 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def view(self, index, s, exposure=0.0, gamma=1.0, channel="rgb",
-             max_px=512):
+             max_px=512, frame=0):
         """
         Render through the cached viewer session.
 
         The session keeps the decoded layer, so exposure, gamma and channel
         changes never re-read the file: measured 4.1x faster at 1080p and 5.6x
         on a 2160 square 80-channel frame.
+
+        `frame` indexes into a sequence entry. Stepping does re-read, because a
+        different frame is a different file - that cost is the sequence player's
+        ceiling and is why it steps rather than plays.
         """
         paths = self._entry_paths(index)
         if not paths:
@@ -971,14 +975,17 @@ class Api:
         try:
             settings = self._settings(s)
             layer = settings.get("layer")
-            self._viewer.load(paths[0], layer)
+            i = max(0, min(int(frame), len(paths) - 1))
+            self._viewer.load(paths[i], layer)
             uri, w, h = self._viewer.render(
                 settings, exposure=float(exposure), gamma=float(gamma),
                 channel=str(channel), max_px=int(max_px))
             full_w, full_h = self._viewer.size
             return {"uri": uri, "width": w, "height": h,
                     "full_width": full_w, "full_height": full_h,
-                    "layer": self._viewer.layer}
+                    "layer": self._viewer.layer,
+                    "frame": i, "frames": len(paths),
+                    "name": os.path.basename(paths[i])}
         except Exception as e:
             return {"error": str(e)}
 
