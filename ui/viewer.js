@@ -410,11 +410,52 @@ let lastHex = null;
 let picking = false;
 let locked = false;
 
+/*
+ * Every value copies on click.
+ *
+ * The window runs with text_select=False, so dragging across a number is
+ * unreliable - and these are the values anyone actually wants to paste.
+ */
+function copyable(text, title) {
+  const b = document.createElement('button');
+  b.className = 'val';
+  b.type = 'button';
+  b.textContent = text;
+  b.title = title ? `${title} — click to copy` : 'Click to copy';
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    await window.pywebview.api.copy_text(text);
+    toast(`Copied ${text}`);
+  };
+  return b;
+}
+
 function paintProbe(p) {
-  const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
-  $('vprobe').textContent =
-    `${p.x},${p.y}   ${p.r.toFixed(4)} ${p.g.toFixed(4)} ${p.b.toFixed(4)}` +
-    `   a ${a}   ${p.hex || ''}`;
+  const el = $('vprobe');
+  const f4 = (v) => v.toFixed(4);
+  const lin = [f4(p.r), f4(p.g), f4(p.b)];
+  el.textContent = '';
+  const add = (node) => el.appendChild(node);
+  const label = (t) => {
+    const s = document.createElement('span');
+    s.className = 'probe-label vlabel';
+    s.textContent = t;
+    return s;
+  };
+  add(copyable(`${p.x},${p.y}`, 'Pixel coordinate'));
+  add(label('lin'));
+  add(copyable(lin[0], 'Red, linear'));
+  add(copyable(lin[1], 'Green, linear'));
+  add(copyable(lin[2], 'Blue, linear'));
+  add(copyable(lin.join(' '), 'All three, linear'));
+  if (p.dr !== undefined) {
+    add(label('disp'));
+    add(copyable([p.dr, p.dg, p.db].join(' '), 'RGB, 8-bit display'));
+  }
+  add(label('a'));
+  add(copyable(p.a === null || p.a === undefined ? '—' : p.a.toFixed(4), 'Alpha'));
+  if (p.hex) add(copyable(p.hex, 'Display colour'));
+
   if (!p.hex) return;
   const sw = $('vswatch');
   sw.hidden = false;

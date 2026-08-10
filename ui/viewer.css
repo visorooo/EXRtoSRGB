@@ -135,6 +135,20 @@
   white-space: pre;
 }
 
+/* The readout is a row of copy buttons, not a string. */
+.vprobe {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.vprobe .vlabel {
+  width: auto;
+  margin-left: 7px;
+  margin-right: 2px;
+}
+
 .vzoom {
   min-width: 5ch;
   text-align: right;

@@ -1009,7 +1009,6 @@ input[type='range']:active::-webkit-slider-thumb {
   line-height: 1.6;
   color: var(--ink-faint);
   min-height: 34px;
-  white-space: pre-wrap;
   user-select: text;
 }
 
@@ -1250,6 +1249,56 @@ input[type='range']:active::-webkit-slider-thumb {
   font-size: 11px;
   color: var(--ink-soft);
   min-width: 8ch;
+}
+
+/* --------------------------------------------------------------------------
+ * Copyable readout values
+ *
+ * The window runs with text_select=False, so a drag across a number is
+ * unreliable. Every value is a button instead - it looks like text until
+ * pointed at, and copies on click.
+ * ------------------------------------------------------------------------ */
+
+.probe-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.probe-label {
+  flex: none;
+  width: 6ch;
+  color: var(--ink-faint);
+}
+
+.val {
+  padding: 0 3px;
+  min-height: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  font: inherit;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: text;
+}
+
+.val:hover:not(:disabled) {
+  background: var(--panel-sunken);
+  color: var(--ink);
+  border-color: transparent;
+}
+
+.val:active:not(:disabled) {
+  transform: none;
+  background: var(--accent);
+  color: var(--panel);
+}
+
+/* The grouped "all three" copy sits slightly apart from the components. */
+.probe-line .val:last-child:not(:first-of-type) {
+  margin-left: 6px;
+  color: var(--ink-faint);
 }
 
 /* --------------------------------------------------------------------------

@@ -414,17 +414,14 @@ function wireProbe() {
   let probeTimer = null;
 
   const paint = (p) => {
-    const lin = `${p.r.toFixed(4)}  ${p.g.toFixed(4)}  ${p.b.toFixed(4)}`;
-    const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
-    $('probe').textContent =
-      `x ${p.x}  y ${p.y}\nlinear  ${lin}\nalpha   ${a}`;
+    const a = p.a === null || p.a === undefined ? null : p.a;
+    renderProbeValues($('probe'), p, a);
     if (!p.hex) return;
     probe.hex = p.hex;
     $('pv-hex').textContent = p.hex;
     swatch.hidden = false;
     // alpha kept on the chip, so a soft edge does not read as a solid colour
-    const al = p.a === null || p.a === undefined
-      ? 1 : Math.min(1, Math.max(0, p.a));
+    const al = a === null ? 1 : Math.min(1, Math.max(0, a));
     swatch.style.setProperty('--swatch', `rgb(${p.dr} ${p.dg} ${p.db} / ${al})`);
   };
 
@@ -486,6 +483,70 @@ function wireProbe() {
     await window.pywebview.api.copy_text(probe.hex);
     log(`Copied ${probe.hex}`, 'ok');
   };
+}
+
+/*
+ * Copy on click, for anything numeric in the readout.
+ *
+ * The window runs with text_select=False, so dragging across a number is
+ * unreliable even where the CSS re-enables it - and these are exactly the values
+ * anyone would want to paste into a comp or a bug report. Each one is its own
+ * control, and the whole line copies together.
+ */
+function copyable(text, title) {
+  const b = document.createElement('button');
+  b.className = 'val';
+  b.type = 'button';
+  b.textContent = text;
+  b.title = title ? `${title} — click to copy` : 'Click to copy';
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    await window.pywebview.api.copy_text(text);
+    log(`Copied ${text}`, 'ok');
+  };
+  return b;
+}
+
+/*
+ * Build the probe readout as copyable pieces.
+ *
+ * Shared by both the converter and, in spirit, the viewer: the values are the
+ * same and so is the reason for making them clickable.
+ */
+function renderProbeValues(el, p, a) {
+  const f4 = (v) => v.toFixed(4);
+  el.textContent = '';
+  const row = (label, ...kids) => {
+    const r = document.createElement('div');
+    r.className = 'probe-line';
+    const l = document.createElement('span');
+    l.className = 'probe-label';
+    l.textContent = label;
+    r.appendChild(l);
+    for (const k of kids) r.appendChild(k);
+    el.appendChild(r);
+  };
+
+  row('pos', copyable(`${p.x}, ${p.y}`, 'Pixel coordinate'));
+
+  const lin = [f4(p.r), f4(p.g), f4(p.b)];
+  row('linear',
+      copyable(lin[0], 'Red, linear'),
+      copyable(lin[1], 'Green, linear'),
+      copyable(lin[2], 'Blue, linear'),
+      copyable(lin.join(' '), 'All three, linear'));
+
+  if (p.dr !== undefined) {
+    const disp = [p.dr, p.dg, p.db];
+    row('display',
+        copyable(String(disp[0]), 'Red, 8-bit display'),
+        copyable(String(disp[1]), 'Green, 8-bit display'),
+        copyable(String(disp[2]), 'Blue, 8-bit display'),
+        copyable(disp.join(' '), 'All three, 8-bit display'));
+  }
+
+  row('alpha', copyable(a === null ? '—' : a.toFixed(4), 'Alpha'));
+  if (p.hex) row('hex', copyable(p.hex, 'Display colour'));
 }
 
 /*

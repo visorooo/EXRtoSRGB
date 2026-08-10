@@ -835,6 +835,17 @@ class Api:
             save_prefs({"theme": theme})
         return True
 
+    def copy_text(self, text):
+        """
+        Put text on the clipboard from Python - file:// blocks the JS API.
+
+        The viewer has had this since the probe grew a hex. The converter needs
+        it too now that the preview copies values, and its absence was silent:
+        the bridge call just rejected, so the copy did nothing and the "Copied"
+        log line never ran either.
+        """
+        return set_clipboard(str(text))
+
     def config_list(self):
         configs = [{"value": name, "label": label}
                    for label, name in core.ACES_CONFIGS.items()]
