@@ -45,8 +45,9 @@
         <button
           class="icon"
           id="btn-prefs"
-          title="Windows integration"
-          aria-label="Windows integration"
+          title="Settings and shortcuts (?)"
+          aria-label="Settings and shortcuts"
+          aria-expanded="false"
           hidden
         >
           <!--
@@ -69,14 +70,6 @@
             />
             <circle cx="7.5" cy="7.5" r="1.8" />
           </svg>
-        </button>
-        <button
-          class="icon"
-          id="btn-keys"
-          title="Keyboard shortcuts (?)"
-          aria-label="Keyboard shortcuts"
-        >
-          ?
         </button>
         <button
           class="icon"
@@ -360,77 +353,84 @@
       </footer>
 
       <!--
-        Windows integration. Both write only under HKCU, so no elevation and
+        One sheet behind the cogwheel: what the app does to the machine, and
+        what the keyboard does. Two columns rather than a stack, because
+        stacked they made a card taller than the window and turned a reference
+        list into a scroll.
+
+        The integration toggles write only under HKCU, so no elevation and
         nothing changes for other accounts. Each is behind an explicit toggle:
         silently seizing a file type is not something a converter should do on
         first run.
       -->
       <div class="vsheet" id="prefsheet" hidden>
-        <div class="vsheet-card">
+        <div class="vsheet-card wide">
           <div class="vsheet-head">
-            <span>Windows integration</span>
+            <span>Settings</span>
             <button class="ghost" id="prefsheet-close">Close</button>
           </div>
-          <div class="prefs">
-            <label class="check" id="assoc-wrap" hidden>
-              <input autocomplete="off" type="checkbox" id="assoc" />
-              <span class="box"></span>
-              <span>Open .exr files with this viewer</span>
-            </label>
-            <p class="prefs-note">
-              Double-clicking an .exr opens it here, and .exr files get their own
-              aperture icon. Untick to hand the file type back.
-            </p>
 
-            <label class="check" id="ctx-wrap" hidden>
-              <input autocomplete="off" type="checkbox" id="ctx" />
-              <span class="box"></span>
-              <span>Right-click → Convert to sRGB</span>
-            </label>
-            <p class="prefs-note">
-              Adds a convert submenu to .exr files in Explorer, whatever app owns
-              the file type. On Windows 11 it sits under “Show more options”.
-            </p>
+          <div class="sheet-cols">
+            <section id="integration-section" hidden>
+              <h3 class="sheet-h">Windows integration</h3>
+              <div class="prefs">
+                <label class="check" id="assoc-wrap" hidden>
+                  <input autocomplete="off" type="checkbox" id="assoc" />
+                  <span class="box"></span>
+                  <span>Open .exr files with this viewer</span>
+                </label>
+                <p class="prefs-note">
+                  Double-clicking an .exr opens it here, and .exr files get their
+                  own aperture icon. Untick to hand the file type back.
+                </p>
 
-            <p class="prefs-foot">
-              Written per-user under HKCU — no admin rights, and nothing changes
-              for anyone else on the machine.
-            </p>
+                <label class="check" id="ctx-wrap" hidden>
+                  <input autocomplete="off" type="checkbox" id="ctx" />
+                  <span class="box"></span>
+                  <span>Right-click → Convert to sRGB</span>
+                </label>
+                <p class="prefs-note">
+                  Adds a convert submenu to .exr files in Explorer, whatever app
+                  owns the file type. On Windows 11 it sits under “Show more
+                  options”.
+                </p>
+
+                <p class="prefs-foot">
+                  Written per-user under HKCU — no admin rights, and nothing
+                  changes for anyone else on the machine.
+                </p>
+              </div>
+            </section>
+
+            <!--
+              The picking modifiers in particular are impossible to guess -
+              nothing on screen suggests Ctrl over the preview does anything.
+            -->
+            <section>
+              <h3 class="sheet-h">Keyboard shortcuts</h3>
+              <dl class="keys">
+                <div class="grp">Files</div>
+                <dt>↑ ↓</dt><dd>Previous / next file</dd>
+                <dt>Ctrl + O</dt><dd>Add files</dd>
+                <dt>Drop</dt><dd>Drag .exr files onto the window</dd>
+
+                <div class="grp">Convert</div>
+                <dt>Ctrl + ↵</dt><dd>Convert</dd>
+                <dt>Esc</dt><dd>Cancel a running convert</dd>
+
+                <div class="grp">Preview</div>
+                <dt>Ctrl + click</dt><dd>Add the object under the cursor</dd>
+                <dt>Alt + click</dt><dd>Remove it again</dd>
+                <dt>Drag divider</dt><dd>Resize the preview</dd>
+                <dt>← →</dt><dd>Resize it from the keyboard</dd>
+                <dt>Double-click</dt><dd>Divider back to the middle size</dd>
+
+                <div class="grp">Window</div>
+                <dt>?</dt><dd>Open this sheet</dd>
+                <dt>Esc</dt><dd>Close it</dd>
+              </dl>
+            </section>
           </div>
-        </div>
-      </div>
-
-      <!--
-        Shortcuts. The picking modifiers in particular are impossible to guess -
-        nothing on screen suggests that Ctrl over the preview does anything.
-      -->
-      <div class="vsheet" id="keysheet" hidden>
-        <div class="vsheet-card">
-          <div class="vsheet-head">
-            <span>Keyboard shortcuts</span>
-            <button class="ghost" id="keysheet-close">Close</button>
-          </div>
-          <dl class="keys">
-            <div class="grp">Files</div>
-            <dt>↑ ↓</dt><dd>Previous / next file</dd>
-            <dt>Ctrl + O</dt><dd>Add files</dd>
-            <dt>Drop</dt><dd>Drag .exr files onto the window</dd>
-
-            <div class="grp">Convert</div>
-            <dt>Ctrl + ↵</dt><dd>Convert</dd>
-            <dt>Esc</dt><dd>Cancel a running convert</dd>
-
-            <div class="grp">Preview</div>
-            <dt>Ctrl + click</dt><dd>Add the object under the cursor to the matte</dd>
-            <dt>Alt + click</dt><dd>Remove it again</dd>
-            <dt>Drag divider</dt><dd>Resize the preview</dd>
-            <dt>← →</dt><dd>Resize it from the keyboard (divider focused)</dd>
-            <dt>Double-click</dt><dd>Divider back to the middle size</dd>
-
-            <div class="grp">Window</div>
-            <dt>?</dt><dd>This list</dd>
-            <dt>Esc</dt><dd>Close this list</dd>
-          </dl>
         </div>
       </div>
     </div>

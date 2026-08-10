@@ -904,28 +904,18 @@ function wire() {
  * cancel binding sees it, and two independent handlers would both fire.
  */
 function wireKeys() {
-  // id -> the button that opens it. Only one may be up at a time, and Escape
-  // has to reach whichever that is before anything else sees the key.
-  const sheets = { keysheet: 'btn-keys', prefsheet: 'btn-prefs' };
-
-  const show = (id, on) => {
-    for (const other of Object.keys(sheets)) {
-      const el = $(other);
-      const open = other === id && on;
-      el.hidden = !open;
-      $(sheets[other]).setAttribute('aria-expanded', String(open));
-    }
+  const sheet = $('prefsheet');
+  const show = (on) => {
+    sheet.hidden = !on;
+    $('btn-prefs').setAttribute('aria-expanded', String(on));
   };
-  const anyOpen = () => Object.keys(sheets).find((id) => !$(id).hidden);
 
-  for (const [id, btn] of Object.entries(sheets)) {
-    $(btn).onclick = () => show(id, $(id).hidden);
-    $(id + '-close').onclick = () => show(id, false);
-    // Clicking the backdrop closes; clicking the card must not.
-    $(id).onclick = (e) => {
-      if (e.target === $(id)) show(id, false);
-    };
-  }
+  $('btn-prefs').onclick = () => show(sheet.hidden);
+  $('prefsheet-close').onclick = () => show(false);
+  // Clicking the backdrop closes; clicking the card must not.
+  sheet.onclick = (e) => {
+    if (e.target === sheet) show(false);
+  };
 
   document.addEventListener('keydown', (e) => {
     // A text field owns its own keystrokes - "?" in the output path is a "?".
@@ -933,18 +923,19 @@ function wireKeys() {
       e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT';
 
     if (e.key === 'Escape') {
-      const open = anyOpen();
-      if (open) {
-        show(open, false);
+      if (!sheet.hidden) {
+        show(false);
       } else if (state.converting) {
         $('btn-cancel').click();
       }
       return;
     }
 
+    // "?" still opens it. The button is gone, not the shortcut - and the sheet
+    // it opens is the only place the shortcut is written down.
     if (e.key === '?' && !typing) {
       e.preventDefault();
-      show('keysheet', $('keysheet').hidden);
+      show(sheet.hidden);
       return;
     }
 
@@ -1036,8 +1027,11 @@ window.addEventListener('pywebviewready', async () => {
     $('ctx-wrap').hidden = false;
     $('ctx').checked = !!ctx.enabled;
   }
-  // No gear at all off Windows - an empty settings sheet is worse than none.
-  $('btn-prefs').hidden = !(assoc.supported || ctx.supported);
+  // The gear stays whatever the platform, because the sheet also holds the
+  // shortcuts. Only the integration half drops out when it is unsupported,
+  // which leaves the card single-column via the same grid.
+  $('integration-section').hidden = !(assoc.supported || ctx.supported);
+  $('btn-prefs').hidden = false;
   state.ready = true;
   await refreshLayers();
   await refreshCrypto();

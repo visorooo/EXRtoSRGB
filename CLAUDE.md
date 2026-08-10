@@ -211,6 +211,17 @@ loads `app.css` too, so `.vsheet` / `.keys` live there once rather than being
 duplicated into `viewer.css` and drifting. Each window keeps its own markup and its
 own key list — only the appearance is shared.
 
+The converter has **one** sheet, behind the cogwheel: Windows integration and the
+shortcuts side by side (`.sheet-cols`, `.vsheet-card.wide`). Stacked they made a
+card taller than the window, which turns a reference list into a scroll. The `?`
+key still opens it — the button went, not the shortcut, and that sheet is the only
+place `?` is written down. The viewer keeps its own `?` button, since it has no
+cogwheel to put one behind.
+
+**The cogwheel must not be hidden with the integration toggles.** It is the only
+button that opens the shortcuts, so off Windows `#integration-section` hides and
+the gear stays; the grid then renders one column on its own.
+
 **Testing UI keys: drive the real window, do not re-`eval` `app.js` in a browser.**
 `const` declarations inside an `eval` are scoped to that eval, so an eval'd copy
 gets its own `state` object; anything gated on `state.converting` then tests

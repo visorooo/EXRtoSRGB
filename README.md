@@ -256,8 +256,9 @@ off the cached layer rather than re-reading the file.
 
 ## Keyboard
 
-Press **?** in either window for the full list — it's there because none of this is
-guessable from looking at the interface.
+Press **?** in either window for the full list, or open the **⚙** in the converter's
+title bar — it's there because none of this is guessable from looking at the
+interface.
 
 **Converter**
 

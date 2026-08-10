@@ -1194,12 +1194,19 @@ input[type='range']:active::-webkit-slider-thumb {
   max-width: 90%;
   max-height: 86vh;
   overflow-y: auto;
+  /* the two-column variant needs room the viewer's single list does not */
+  --sheet-w: auto;
+  width: var(--sheet-w);
   padding: 16px 18px 18px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow-float);
   animation: select-in 160ms var(--ease-out);
+}
+
+.vsheet-card.wide {
+  --sheet-w: 760px;
 }
 
 .vsheet-head {
@@ -1259,11 +1266,33 @@ input[type='range']:active::-webkit-slider-thumb {
  * Windows integration sheet
  * ------------------------------------------------------------------------ */
 
+/* Side by side while there is room, stacked when there is not - the card is
+   capped at 86vh, and a stacked layout hit that on a short window. */
+.sheet-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 32px;
+}
+
+@media (max-width: 760px) {
+  .sheet-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sheet-h {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
 .prefs {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 46ch;
 }
 
 /* Indented to line up with the checkbox label, not the box. */
