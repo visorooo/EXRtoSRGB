@@ -763,6 +763,19 @@ input[type='text']:focus {
   font-weight: 600;
 }
 
+/* Shown rather than removed: "32-bit float" vanishing from the list when the
+   format changes reads as a glitch, whereas a greyed row with a reason on it
+   teaches the constraint. */
+.select-item[data-disabled] {
+  color: var(--ink-faint);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.select-item[data-disabled]:hover {
+  background: transparent;
+}
+
 .select-item__text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1156,6 +1169,118 @@ input[type='range']:active::-webkit-slider-thumb {
 .log .dim {
   color: var(--ink-faint);
   opacity: 0.75;
+}
+
+/* --------------------------------------------------------------------------
+ * Shortcuts sheet
+ *
+ * Shared by both windows: the converter and the viewer each have one, and the
+ * whole point is that they look like the same app telling you the same kind of
+ * thing. Loaded by viewer.html too, which is why it lives here.
+ * ------------------------------------------------------------------------ */
+
+.vsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.45);
+  animation: fade-in 140ms var(--ease-ui);
+}
+
+.vsheet-card {
+  min-width: 340px;
+  max-width: 90%;
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-float);
+  animation: select-in 160ms var(--ease-out);
+}
+
+.vsheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.keys dt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--panel-sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 2px 7px;
+  justify-self: start;
+  white-space: nowrap;
+}
+
+.keys dd {
+  margin: 0;
+  color: var(--ink-soft);
+  align-self: center;
+}
+
+/* A group heading spanning both columns - the converter's list is long enough
+   that flat rows stop being scannable. */
+.keys .grp {
+  grid-column: 1 / -1;
+  margin: 8px 0 1px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.keys .grp:first-child {
+  margin-top: 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Windows integration sheet
+ * ------------------------------------------------------------------------ */
+
+.prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 46ch;
+}
+
+/* Indented to line up with the checkbox label, not the box. */
+.prefs-note {
+  margin: 0 0 12px 25px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.prefs-foot {
+  margin: 4px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
 }
 
 /* --------------------------------------------------------------------------

@@ -56,6 +56,16 @@ immediately instead of leaving an older selection in place.
 of the list. Every frame still converts. Click a row to preview it; arrow keys move
 through the list.
 
+**Dropping one frame brings the whole run.** Drag `shot_010_beauty.0087.exr` on and
+you get all 240, because a single frame of a sequence is almost never what you
+meant. The log says how many were pulled in, so it's never a silent surprise.
+Matching is on stem, frame padding *and* extension in the same folder — a
+`shot_010_beauty.000087.exr` from a different render, or a `.png` sitting beside
+the frames, is a different run and stays out.
+
+Only one converter window opens at a time; launching it again focuses the one you
+have. Viewers are unrestricted — open as many images at once as you like.
+
 ---
 
 ## Layer — read this if your render has AOVs
@@ -196,7 +206,7 @@ exposure and saturation.
 ## Viewer
 
 **Double-click any `.exr` and it opens.** Tick **Open .exr files with this viewer**
-in Output settings and Windows will hand `.exr` files to the app the way it does
+under the **⚙** button in the title bar and Windows will hand `.exr` files to the app the way it does
 for PNG or JPEG. The association is written per-user under `HKCU`, so it needs no
 admin rights and changes nothing for anyone else on the machine; untick it to hand
 the file type back. It stays behind a toggle deliberately — a converter that
@@ -228,10 +238,15 @@ The viewer window gives you:
   exposure in stops before the transform, gamma after.
 - **Channel isolation** — keys **R G B A**, **C** back to colour.
 - **Layer switching** for multi-layer EXRs.
-- **A pixel probe** showing linear scene values under the cursor.
+- **A pixel probe** showing linear scene values under the cursor, next to a colour
+  chip and the **hex of what's on screen**. Click the chip to copy the hex. The two
+  readings are deliberately different things: the linear value is the pixel in the
+  file, the hex is the display colour after exposure, gamma and the ACES curve —
+  which is what a hex code means anywhere you'd paste one.
 - **Convert** — the same five presets as the right-click menu, applied to the open
-  file. A toast confirms what was written; click it to show the file in Explorer.
-- **Esc** closes.
+  file **and the layer you're looking at**, so exporting while an AOV is on screen
+  writes that AOV, named for it, instead of quietly writing the beauty.
+- **?** lists every shortcut; **Esc** closes.
 
 Zoom and pan are pure canvas transforms, so they stay smooth whatever the image
 size; only exposure, gamma, channel and layer ask for new pixels, and those come
@@ -239,10 +254,40 @@ off the cached layer rather than re-reading the file.
 
 ---
 
+## Keyboard
+
+Press **?** in either window for the full list — it's there because none of this is
+guessable from looking at the interface.
+
+**Converter**
+
+| Key | Does |
+|---|---|
+| `↑` `↓` | Previous / next file |
+| `Ctrl` `O` | Add files |
+| `Ctrl` `↵` | Convert |
+| `Esc` | Cancel a running convert |
+| `Ctrl` + click | Add the object under the cursor to the matte |
+| `Alt` + click | Remove it again |
+| `←` `→` | Resize the preview (with the divider focused) |
+
+**Viewer**
+
+| Key | Does |
+|---|---|
+| `F` | Fit to window |
+| `1` | Actual pixels (1:1) |
+| `+` `−` | Zoom in / out |
+| `R` `G` `B` `A` | Isolate a channel |
+| `C` | Back to colour |
+| `Esc` | Close the window |
+
+---
+
 ## Right-click → Convert to sRGB
 
-Tick **Right-click → Convert to sRGB** in Output settings to add a convert submenu
-to `.exr` files in Explorer:
+Tick **Right-click → Convert to sRGB** under the **⚙** button in the title bar to
+add a convert submenu to `.exr` files in Explorer:
 
 | | |
 |---|---|
@@ -301,11 +346,12 @@ object or material in the render; tick the ones you want and hit **Export mattes
 object gets a stable colour derived from its hash, and ranks are composited so
 edges blend rather than alias.
 
-**Ctrl-click the ID view to select objects directly.** Clicking an object toggles
-it, ticked objects stay lit and everything else dims, so you can see the selection
-build up on the image instead of hunting through the list. Picking costs nothing —
-it reads the ID plane the preview was already built from rather than touching the
-file again.
+**Pick objects straight off the ID view: Ctrl-click adds, Alt-click removes.**
+Ticked objects stay lit and everything else dims, so the selection builds up on the
+image instead of being hunted through a list. Add and remove are separate rather
+than one toggle because, working quickly, you stop having to remember what state a
+given object is already in. Picking costs nothing — it reads the ID plane the
+preview was already built from rather than touching the file again.
 
 - **Type** — Blender writes `CryptoObject` and `CryptoMaterial`; Redshift and
   others add their own. Each is listed with its object count, and selections are

@@ -66,9 +66,35 @@
 
         <button class="ghost" id="vreset" title="Reset exposure and gamma">Reset</button>
         <span class="spacer"></span>
+        <!-- click to copy the hex; the chip is the colour under the cursor -->
+        <button class="swatch" id="vswatch" hidden
+                title="Click to copy the hex"></button>
         <span class="vprobe" id="vprobe"></span>
+        <button class="ghost" id="vkeys" title="Keyboard shortcuts (?)">?</button>
         <span class="vzoom" id="vzoom">100%</span>
       </footer>
+
+      <!-- shortcuts, because none of these keys are discoverable otherwise -->
+      <div class="vsheet" id="vsheet" hidden>
+        <div class="vsheet-card">
+          <div class="vsheet-head">
+            <span>Keyboard shortcuts</span>
+            <button class="ghost" id="vsheet-close">Close</button>
+          </div>
+          <dl class="keys">
+            <dt>F</dt><dd>Fit to window</dd>
+            <dt>1</dt><dd>Actual pixels (1:1)</dd>
+            <dt>+ / −</dt><dd>Zoom in / out</dd>
+            <dt>Scroll</dt><dd>Zoom at the cursor</dd>
+            <dt>Drag</dt><dd>Pan</dd>
+            <dt>R G B A</dt><dd>Isolate a channel</dd>
+            <dt>C</dt><dd>Back to colour</dd>
+            <dt>Click swatch</dt><dd>Copy hex under the cursor</dd>
+            <dt>?</dt><dd>This list</dd>
+            <dt>Esc</dt><dd>Close the window</dd>
+          </dl>
+        </div>
+      </div>
 
       <!-- transient confirmation after a convert; click it to reveal the file -->
       <div class="vtoast" id="vtoast" hidden></div>

@@ -54,6 +54,15 @@ tested without opening a window.
   `config.ocio`.
 - **Layer resolution** — `split_channel` / `group_layers` / `score_layer` /
   `pick_layer` / `probe_layers`. See the invariants below.
+- **`layer_tag`** — the filename fragment naming a layer, `""` for the auto case.
+  Exporting two layers of one EXR without it silently overwrites: same stem, same
+  suffix, same folder. It strips the view-layer prefix, so `ViewLayer.Diffuse Color`
+  becomes `_Diffuse_Color` rather than repeating `ViewLayer` on every file.
+- **`find_sequence_siblings`** — every frame of the run a path belongs to. Matches
+  stem, **padding and extension**, not just the stem: `shot.0001.exr` and
+  `shot.000001.exr` are two different renders, and a `.png` beside the frames is
+  not part of the sequence. Returns `[path]` unchanged when there is no frame
+  number, so callers need no special case.
 - **I/O** — `read_layer` (reads only the channels the chosen layer needs),
   `write_image`.
 - **`apply_transform` / `compose`** — the transform and the alpha modes, split out
@@ -85,6 +94,12 @@ Two things that will bite anyone editing `render()`:
 - **Exposure goes before the transform, gamma after.** Exposure in linear is what
   makes it behave like a camera stop; gamma on display values is what a
   compositor's viewer gamma does. Swapping them changes what both controls mean.
+
+`sample()` returns **both** readings: `r/g/b` are the linear pixel, `dr/dg/db` and
+`hex` are what is on screen after exposure, gamma and the view transform. They are
+not interchangeable — a hex built from the linear value reads near-black for
+anything normally exposed and matches nothing pasted anywhere else. Tests assert
+that exposure moves the hex and leaves the linear reading alone.
 
 **`exr2srgb.py`** — `class Api` is the JS bridge. Two non-obvious constraints:
 
@@ -140,6 +155,18 @@ Two defences, keep both: private mode removes the cache, and `on(id, event, fn)`
 in `viewer.js` binds only when the element exists, with `startup()` wrapped in a
 try/catch that reports into `#vmeta`. **A missing control must never be fatal.**
 
+**Single instance is the converter only.** `claim_single_instance()` is called in
+`main()` **after** the `--view` and `--convert` early returns, and that ordering is
+the design, not an accident: opening several images at once is what a viewer is
+for, and the Explorer right-click convert has to run whether or not a converter
+window is open. The mutex handle is a module global — letting it be collected
+releases the mutex and the guard silently stops working.
+
+**`set_clipboard` is Win32 via ctypes, not `navigator.clipboard`.** The UI is a
+`file://` origin, which is opaque, and the async clipboard API is unavailable
+there. It fails by rejecting a promise, so a JS-side implementation looks like it
+does nothing at all.
+
 **`ui/app.js`** — `applyDefaults()` sets every control from code at startup.
 WebView2 restores form state from its profile across launches, which silently
 flipped un-premultiply off between runs. Do not rely on `checked` in the markup.
@@ -155,6 +182,21 @@ change event and mutates no attribute**, so every programmatic write goes throug
 `setValue()` in app.js; and repopulating options is caught by a `MutationObserver`,
 which is why `fillSelect` works without special handling.
 
+**A disabled `<option>` has to be honoured by hand.** The native `<select>` is
+visually hidden, so `option.disabled` has no visible effect on its own — the panel
+is what the user sees, and it is built from scratch. Until v2.1 it rendered every
+option as clickable, which is how "32-bit float" stayed pickable under PNG: the
+value was set, the label said 32-bit, and `resolve_output` quietly wrote 16. Four
+places need the check — `renderItems` (styling and no click handler), `commit`
+(refuse), `nextEnabled`/`firstEnabled` (arrow keys, Home/End) and `doTypeahead`.
+Disabled options are greyed rather than removed, and `option.title` is surfaced as
+the tooltip, so the constraint explains itself.
+
+Note the `MutationObserver` is a **microtask**: after changing `select.disabled`
+from code, the trigger's own disabled state is not updated until the current script
+finishes. Anything that toggles a select and then drives its panel in the same
+synchronous block will act on the stale trigger.
+
 **Preview sizing has two independent axes.** The column width is freeform
 (`--preview-w`, dragged or jumped to by the S/M/L presets, persisted as
 `preview_width`); the *render* resolution snaps to `RENDER_TIERS` and only changes
@@ -163,6 +205,18 @@ width re-renders on every pixel of a drag, and a render is tens of milliseconds.
 
 **Scripts are plain, not ES modules.** The UI loads from a `file://` URL, whose
 opaque origin makes `import` fail CORS. `select.js` must load before `app.js`.
+
+**The shortcuts sheet is styled from `app.css`, in both windows.** `viewer.html`
+loads `app.css` too, so `.vsheet` / `.keys` live there once rather than being
+duplicated into `viewer.css` and drifting. Each window keeps its own markup and its
+own key list — only the appearance is shared.
+
+**Testing UI keys: drive the real window, do not re-`eval` `app.js` in a browser.**
+`const` declarations inside an `eval` are scoped to that eval, so an eval'd copy
+gets its own `state` object; anything gated on `state.converting` then tests
+nothing, and every eval stacks another `keydown` listener so handlers appear to
+fire two and three times. `webview.start(func, window)` with `evaluate_js` gives a
+single correctly-wired page — that is how the shortcut behaviour is verified.
 
 ## Running and building
 
@@ -266,6 +320,13 @@ the same submenu. Do not spend time trying to get there with registry keys.
 the handler but routinely leaves the old icon in place, which looks identical to a
 failed registration. `refresh_shell()` also runs `ie4uinit.exe -show` to rebuild
 that cache. If an icon still looks wrong, suspect the cache before the code.
+
+**The two integration toggles live in a sheet behind the ⚙ in the title bar**, not
+in Output settings. Everything in that grid is per-job; these are set once and
+change the machine, and crammed into the same field they wrapped badly. The gear
+hides entirely when neither is supported, so there is no empty sheet off Windows.
+`assoc`/`ctx` and their `-wrap` ids are unchanged, so the platform gating in
+`applyDefaults`' caller still works.
 
 **File association is per-user, under `HKCU\Software\Classes`.** No elevation,
 nothing changed for other accounts, and `SHChangeNotify` is called afterwards or

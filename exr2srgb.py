@@ -104,6 +104,92 @@ def _exe_command():
         sys.executable, os.path.abspath(__file__))
 
 
+def set_clipboard(text):
+    """
+    Put text on the clipboard.
+
+    Done here rather than with navigator.clipboard: the UI is served from a
+    file:// origin, which is not a secure context, so the JS clipboard API is
+    unavailable. execCommand('copy') needs a selection and a user gesture and is
+    unreliable inside a webview, so Win32 is the dependable route.
+    """
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+    CF_UNICODETEXT, GMEM_MOVEABLE = 13, 0x0002
+    u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+    buf = ctypes.create_unicode_buffer(text)
+    size = ctypes.sizeof(buf)
+    k32.GlobalAlloc.restype = wintypes.HGLOBAL
+    k32.GlobalLock.restype = ctypes.c_void_p
+    handle = k32.GlobalAlloc(GMEM_MOVEABLE, size)
+    if not handle:
+        return False
+    ptr = k32.GlobalLock(handle)
+    if not ptr:
+        return False
+    ctypes.memmove(ptr, buf, size)
+    k32.GlobalUnlock(handle)
+    if not u32.OpenClipboard(None):
+        k32.GlobalFree(handle)
+        return False
+    try:
+        u32.EmptyClipboard()
+        # Ownership passes to the clipboard on success; do not free after this.
+        if not u32.SetClipboardData(CF_UNICODETEXT, handle):
+            k32.GlobalFree(handle)
+            return False
+    finally:
+        u32.CloseClipboard()
+    return True
+
+
+# ----------------------------------------------------------------------------
+# Single instance
+#
+# Only the converter is limited. Viewers are deliberately unrestricted: opening
+# several images side by side is the point, and each --view launch is its own
+# process because that is what a double-click gives us.
+# ----------------------------------------------------------------------------
+
+MUTEX_NAME = "Local\\VISOR.EXRtoSRGB.converter"
+_instance_mutex = None
+
+
+def claim_single_instance():
+    """
+    True if this process owns the converter. False means one is already open.
+
+    The handle is kept on a module global on purpose: letting it be collected
+    would release the mutex and let a second window through.
+    """
+    global _instance_mutex
+    if os.name != "nt":
+        return True
+    import ctypes
+    ERROR_ALREADY_EXISTS = 183
+    _instance_mutex = ctypes.windll.kernel32.CreateMutexW(None, False,
+                                                          MUTEX_NAME)
+    return ctypes.GetLastError() != ERROR_ALREADY_EXISTS
+
+
+def focus_existing_instance():
+    """Bring the already-running converter forward instead of opening another."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    u32 = ctypes.windll.user32
+    title = "%s  ·  v%s" % (APP_NAME, VERSION)
+    hwnd = u32.FindWindowW(None, title)
+    if not hwnd:
+        return False
+    SW_RESTORE = 9
+    u32.ShowWindow(hwnd, SW_RESTORE)
+    u32.SetForegroundWindow(hwnd)
+    return True
+
+
 def refresh_shell():
     """
     Make Explorer notice a changed association or icon.
@@ -224,7 +310,7 @@ def set_context_menu(enable):
     return True
 
 
-def convert_cli(path, fmt="png", bits=16, transfer="display"):
+def convert_cli(path, fmt="png", bits=16, transfer="display", layer=None):
     """
     Headless convert, for the right-click menu. No window, no prompts.
 
@@ -242,11 +328,14 @@ def convert_cli(path, fmt="png", bits=16, transfer="display"):
         "quality": 95,
         "bits": int(bits),
         "alpha_mode": "keep",
-        "layer": None,
+        "layer": layer,
         "unpremult": True,
         "transfer": transfer,
         "out_dir": None,
-        "suffix": "_linear" if transfer == "linear" else "_srgb",
+        # The layer goes in the name, or exporting the same EXR twice from two
+        # different layers writes the same file and the second wins silently.
+        "suffix": core.layer_tag(layer)
+                  + ("_linear" if transfer == "linear" else "_srgb"),
     }
     try:
         out, info = core.convert_one(path, settings)
@@ -494,11 +583,16 @@ class ViewerApi:
         except Exception as e:
             return {"error": str(e)}
 
-    def probe(self, u, v):
+    def probe(self, u, v, exposure=0.0, gamma=1.0):
         try:
-            return self._session.sample(float(u), float(v)) or {}
+            return self._session.sample(float(u), float(v), self._settings(),
+                                        float(exposure), float(gamma)) or {}
         except Exception:
             return {}
+
+    def copy_text(self, text):
+        """Put text on the clipboard from Python - file:// blocks the JS API."""
+        return set_clipboard(str(text))
 
     def convert_presets(self):
         """
@@ -513,9 +607,15 @@ class ViewerApi:
                 for _key, label, fmt, bits, transfer in CONVERT_VERBS]
 
     def convert(self, fmt, bits, transfer):
-        """Convert the open file with one of the presets."""
+        """
+        Convert the open file with one of the presets.
+
+        Uses the layer currently on screen. Exporting the beauty while looking
+        at Ambient Occlusion is the kind of wrong that looks right.
+        """
         try:
-            out = convert_cli(self._path, fmt, int(bits), transfer)
+            out = convert_cli(self._path, fmt, int(bits), transfer,
+                              layer=self._session.layer)
             if not out:
                 return {"ok": False, "error": "conversion failed"}
             return {"ok": True, "name": os.path.basename(out), "path": out}
@@ -578,6 +678,7 @@ class Api:
         self._pick_key = None
         self._viewer = core.ViewerSession()
         self._last_added = None
+        self._last_expanded = 0
 
     # -- helpers ----------------------------------------------------------
 
@@ -629,8 +730,9 @@ class Api:
                 pass
 
     def _add_paths(self, paths, recurse=True):
-        """Add files. Returns (added, label of the last entry added)."""
+        """Add files. Returns the number added; the new entry is on _last_added."""
         added = 0
+        expanded = 0
         last = None
         for p in paths:
             if not p:
@@ -642,10 +744,24 @@ class Api:
                         self.files.append(f)
                         added += 1
                         last = f
-            elif p.lower().endswith(".exr") and p not in self.files:
-                self.files.append(p)
-                added += 1
-                last = p
+            elif p.lower().endswith(".exr"):
+                # A numbered frame means the run, not the one file.
+                siblings = core.find_sequence_siblings(p)
+                if len(siblings) > 1:
+                    grew = [f for f in siblings if f not in self.files]
+                    if grew:
+                        self.files.extend(grew)
+                        added += len(grew)
+                        # "Pulled in" counts the frames the user did not drop.
+                        # The dropped one only discounts if it was itself new -
+                        # re-dropping a frame already on the list makes every
+                        # sibling an extra.
+                        expanded += len(grew) - (1 if p in grew else 0)
+                    last = p
+                elif p not in self.files:
+                    self.files.append(p)
+                    added += 1
+                    last = p
         self.files.sort()
         self._regroup()
         label = None
@@ -656,7 +772,15 @@ class Api:
                     label = e["label"]
                     break
         self._last_added = label
+        self._last_expanded = expanded
         return added
+
+    def _added_message(self, n):
+        extra = getattr(self, "_last_expanded", 0)
+        if extra > 0:
+            return ("Added %d file(s) — %d pulled in from the sequence."
+                    % (n, extra))
+        return "Added %d file(s)." % n
 
     def _entry_paths(self, index):
         if not (0 <= index < len(self.entries)):
@@ -966,7 +1090,7 @@ class Api:
             file_types=("OpenEXR (*.exr)", "All files (*.*)"))
         if res:
             n = self._add_paths(res)
-            self._js("onLog", "Added %d file(s)." % n, "dim")
+            self._js("onLog", self._added_message(n), "dim")
         self._push_files(getattr(self, "_last_added", None))
         return True
 
@@ -974,7 +1098,7 @@ class Api:
         res = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         if res:
             n = self._add_paths(res)
-            self._js("onLog", "Added %d file(s)." % n, "dim")
+            self._js("onLog", self._added_message(n), "dim")
         self._push_files(getattr(self, "_last_added", None))
         return True
 
@@ -1111,7 +1235,7 @@ def attach_dnd(window, api):
         skipped = len(paths) - len(exrs)
         n = api._add_paths(exrs)
         if n:
-            api._js("onLog", "Added %d file(s)." % n, "dim")
+            api._js("onLog", api._added_message(n), "dim")
         if skipped:
             api._js("onLog",
                     "Ignored %d file(s) - only .exr is accepted" % skipped, "warn")
@@ -1176,6 +1300,12 @@ def main():
         webview.start(debug=bool(os.environ.get("EXR2SRGB_DEBUG")),
                       private_mode=True,
                       **({"icon": icon} if os.path.exists(icon) else {}))
+        return
+
+    # Only the converter is single-instance. --view and --convert returned
+    # above, so viewers and shell conversions are never blocked.
+    if not claim_single_instance():
+        focus_existing_instance()
         return
 
     api = Api()

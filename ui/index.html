@@ -38,6 +38,45 @@
         <span class="sub">ACES linear → PNG / JPEG / TIFF</span>
         <span class="spacer"></span>
         <span class="sub" id="version"></span>
+        <!--
+          Windows integration lives behind this rather than in Output settings:
+          those are per-job, these are set once and change the machine.
+        -->
+        <button
+          class="icon"
+          id="btn-prefs"
+          title="Windows integration"
+          aria-label="Windows integration"
+          hidden
+        >
+          <!--
+            A real cogwheel: 8 teeth, generated so the tooth and the valley are
+            each 18° of the 45° pitch. Drawn rather than hand-tweaked, because at
+            15px an uneven tooth reads as a wobble.
+          -->
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 15 15"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M6.51 1.23 L8.49 1.23 L8.61 2.88 L9.98 3.45 L11.23 2.36 L12.64 3.77 L11.55 5.02 L12.12 6.39 L13.77 6.51 L13.77 8.49 L12.12 8.61 L11.55 9.98 L12.64 11.23 L11.23 12.64 L9.98 11.55 L8.61 12.12 L8.49 13.77 L6.51 13.77 L6.39 12.12 L5.02 11.55 L3.77 12.64 L2.36 11.23 L3.45 9.98 L2.88 8.61 L1.23 8.49 L1.23 6.51 L2.88 6.39 L3.45 5.02 L2.36 3.77 L3.77 2.36 L5.02 3.45 L6.39 2.88 Z"
+            />
+            <circle cx="7.5" cy="7.5" r="2.15" />
+          </svg>
+        </button>
+        <button
+          class="icon"
+          id="btn-keys"
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+        >
+          ?
+        </button>
         <button
           class="icon"
           id="btn-theme"
@@ -164,25 +203,6 @@
                   <!-- text follows the output mode; see suffixFor() in app.js -->
                   <span id="suffix-label">Add “_srgb”</span>
                 </label>
-                <!--
-                  Writes a per-user handler under HKCU. Behind an explicit
-                  toggle: silently taking over a file type is not something a
-                  converter should do on first run.
-                -->
-                <label class="check" id="assoc-wrap" hidden>
-                  <input autocomplete="off" type="checkbox" id="assoc" />
-                  <span class="box"></span>
-                  <span>Open .exr files with this viewer</span>
-                </label>
-                <!--
-                  Registered under SystemFileAssociations, so the convert verbs
-                  appear on .exr whatever app owns the file type.
-                -->
-                <label class="check" id="ctx-wrap" hidden>
-                  <input autocomplete="off" type="checkbox" id="ctx" />
-                  <span class="box"></span>
-                  <span>Right-click → Convert to sRGB</span>
-                </label>
               </div>
             </div>
 
@@ -260,7 +280,7 @@
               <div class="placeholder">Add a file to preview the conversion</div>
             </div>
             <div class="pick-hint" id="pick-hint" hidden>
-              Ctrl-click the image to select objects
+              Ctrl-click to select · Alt-click to deselect
             </div>
 
             <!--
@@ -337,6 +357,81 @@
         <div class="progress" id="progress"><div class="bar" id="bar"></div></div>
         <div class="log" id="log"></div>
       </footer>
+
+      <!--
+        Windows integration. Both write only under HKCU, so no elevation and
+        nothing changes for other accounts. Each is behind an explicit toggle:
+        silently seizing a file type is not something a converter should do on
+        first run.
+      -->
+      <div class="vsheet" id="prefsheet" hidden>
+        <div class="vsheet-card">
+          <div class="vsheet-head">
+            <span>Windows integration</span>
+            <button class="ghost" id="prefsheet-close">Close</button>
+          </div>
+          <div class="prefs">
+            <label class="check" id="assoc-wrap" hidden>
+              <input autocomplete="off" type="checkbox" id="assoc" />
+              <span class="box"></span>
+              <span>Open .exr files with this viewer</span>
+            </label>
+            <p class="prefs-note">
+              Double-clicking an .exr opens it here, and .exr files get their own
+              aperture icon. Untick to hand the file type back.
+            </p>
+
+            <label class="check" id="ctx-wrap" hidden>
+              <input autocomplete="off" type="checkbox" id="ctx" />
+              <span class="box"></span>
+              <span>Right-click → Convert to sRGB</span>
+            </label>
+            <p class="prefs-note">
+              Adds a convert submenu to .exr files in Explorer, whatever app owns
+              the file type. On Windows 11 it sits under “Show more options”.
+            </p>
+
+            <p class="prefs-foot">
+              Written per-user under HKCU — no admin rights, and nothing changes
+              for anyone else on the machine.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!--
+        Shortcuts. The picking modifiers in particular are impossible to guess -
+        nothing on screen suggests that Ctrl over the preview does anything.
+      -->
+      <div class="vsheet" id="keysheet" hidden>
+        <div class="vsheet-card">
+          <div class="vsheet-head">
+            <span>Keyboard shortcuts</span>
+            <button class="ghost" id="keysheet-close">Close</button>
+          </div>
+          <dl class="keys">
+            <div class="grp">Files</div>
+            <dt>↑ ↓</dt><dd>Previous / next file</dd>
+            <dt>Ctrl + O</dt><dd>Add files</dd>
+            <dt>Drop</dt><dd>Drag .exr files onto the window</dd>
+
+            <div class="grp">Convert</div>
+            <dt>Ctrl + ↵</dt><dd>Convert</dd>
+            <dt>Esc</dt><dd>Cancel a running convert</dd>
+
+            <div class="grp">Preview</div>
+            <dt>Ctrl + click</dt><dd>Add the object under the cursor to the matte</dd>
+            <dt>Alt + click</dt><dd>Remove it again</dd>
+            <dt>Drag divider</dt><dd>Resize the preview</dd>
+            <dt>← →</dt><dd>Resize it from the keyboard (divider focused)</dd>
+            <dt>Double-click</dt><dd>Divider back to the middle size</dd>
+
+            <div class="grp">Window</div>
+            <dt>?</dt><dd>This list</dd>
+            <dt>Esc</dt><dd>Close this list</dd>
+          </dl>
+        </div>
+      </div>
     </div>
 
     <!--

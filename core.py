@@ -241,6 +241,52 @@ def pick_layer(channelnames, requested=None):
     return best, comps, note
 
 
+def layer_tag(layer):
+    """
+    A filename-safe fragment naming a layer, or "" for the bare/auto case.
+
+    Exports from two different layers of the same EXR would otherwise land on
+    the same filename, so the second silently replaces the first.
+    """
+    if not layer:
+        return ""
+    safe = re.sub(r"[^\w.\-]+", "_", layer).strip("_")
+    # Blender prefixes every layer with the view layer; it adds nothing here
+    safe = safe.rsplit(".", 1)[-1] if safe.count(".") else safe
+    return "_" + safe if safe else ""
+
+
+def find_sequence_siblings(path):
+    """
+    Every frame of the run `path` belongs to, or just `path` if it is not one.
+
+    Dropping `beauty.0001.exr` should bring the sequence with it - that is what
+    the file means. Matching is on directory, stem, padding width and extension,
+    so `beauty.0001.exr` never absorbs `beauty_v2.0001.exr` or a differently
+    padded run.
+    """
+    directory, fname = os.path.split(path)
+    stem_ext, ext = os.path.splitext(fname)
+    m = _FRAME_RE.match(stem_ext)
+    if not m or not m.group("frame"):
+        return [path]
+
+    stem, pad = m.group("stem"), len(m.group("frame"))
+    out = []
+    try:
+        entries = os.listdir(directory or ".")
+    except OSError:
+        return [path]
+    for other in entries:
+        o_stem_ext, o_ext = os.path.splitext(other)
+        if o_ext.lower() != ext.lower():
+            continue
+        om = _FRAME_RE.match(o_stem_ext)
+        if om and om.group("stem") == stem and len(om.group("frame")) == pad:
+            out.append(os.path.join(directory, other))
+    return sorted(out) or [path]
+
+
 def image_size(path):
     """(width, height) without decoding any pixels."""
     src = oiio.ImageInput.open(path)
@@ -1068,23 +1114,40 @@ class ViewerSession:
         arr = (out * 255.0 + 0.5).astype(np.uint8)
         return _png_data_uri(arr, w, h, nch), w, h
 
-    def sample(self, u, v):
+    def sample(self, u, v, settings=None, exposure=0.0, gamma=1.0):
         """
-        Linear scene values under a normalised coordinate.
+        Values under a normalised coordinate.
 
-        Reported from the full-resolution layer, not the preview, so the number
-        is the pixel's real value rather than a resampled approximation.
+        Linear values come from the full-resolution layer, not the preview, so
+        they are the pixel's real values rather than a resampled approximation.
+
+        When `settings` is given the same pixel is also pushed through the
+        display chain, which is what a hex code has to mean: the colour on
+        screen. A hex of the linear value would read as near-black for anything
+        normally exposed and would match nothing anyone could paste elsewhere.
         """
         if self._rgb is None:
             return None
         x = min(self._W - 1, max(0, int(u * self._W)))
         y = min(self._H - 1, max(0, int(v * self._H)))
         px = self._rgb[y, x]
-        return {
+        out = {
             "x": x, "y": y,
             "r": float(px[0]), "g": float(px[1]), "b": float(px[2]),
             "a": (float(self._alpha[y, x]) if self._alpha is not None else None),
         }
+        if settings is not None:
+            one = np.array(px, dtype=np.float32).reshape(1, 1, 3).copy()
+            if exposure:
+                one *= np.float32(2.0 ** exposure)
+            disp, _ = apply_transform(one, None, 1, 1, settings)
+            if gamma and gamma != 1.0:
+                disp = np.power(np.clip(disp, 0.0, 1.0), 1.0 / float(gamma))
+            rgb8 = (np.clip(disp, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)[0, 0]
+            out["dr"], out["dg"], out["db"] = (int(rgb8[0]), int(rgb8[1]),
+                                               int(rgb8[2]))
+            out["hex"] = "#%02X%02X%02X" % (rgb8[0], rgb8[1], rgb8[2])
+        return out
 
 
 def _png_data_uri(arr, W, H, nchannels):

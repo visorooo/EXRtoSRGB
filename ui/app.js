@@ -81,9 +81,16 @@ function syncFormat() {
   $('format').disabled = linear;
   $('bits').disabled = jpeg || linear;
 
-  // 32-bit is float, and only TIFF has float here
+  // 32-bit is float, and only TIFF has float here. select.js renders the
+  // disabled option greyed with this title, so the constraint explains itself
+  // instead of the choice quietly not sticking.
   const bit32 = $('bits').querySelector('option[value="32"]');
-  if (bit32) bit32.disabled = fmt !== 'tiff';
+  if (bit32) {
+    bit32.disabled = fmt !== 'tiff';
+    bit32.title = bit32.disabled
+      ? '32-bit is floating point — only TIFF can carry it'
+      : '';
+  }
   if (jpeg) setValue($('bits'), '8');
   else if (fmt !== 'tiff' && $('bits').value === '32') setValue($('bits'), '16');
 
@@ -625,7 +632,10 @@ function updateCryptoCount() {
 function wirePicking() {
   const box = $('preview-box');
 
-  const armed = (e) => crypto.mode === 'crypto' && (e.ctrlKey || e.metaKey);
+  // Ctrl adds, Alt removes. Explicit beats toggling: working quickly you stop
+  // having to remember what state each object is already in.
+  const armed = (e) =>
+    crypto.mode === 'crypto' && (e.ctrlKey || e.metaKey || e.altKey);
   const update = (e) => box.classList.toggle('pickable', armed(e));
   document.addEventListener('keydown', update);
   document.addEventListener('keyup', update);
@@ -649,9 +659,8 @@ function wirePicking() {
       return;
     }
     const sel = selectionFor(type.id);
-    if (sel.has(res.name)) {
-      sel.delete(res.name);
-      log(`− ${res.name}`, 'dim');
+    if (e.altKey) {
+      if (sel.delete(res.name)) log(`− ${res.name}`, 'dim');
     } else {
       sel.add(res.name);
       log(`+ ${res.name}`, 'ok');
@@ -885,10 +894,74 @@ function wire() {
     $(id).onchange = schedulePreview;
   }
 
-  // arrow keys move through the file list
+  wireKeys();
+}
+
+/*
+ * Global keys, and the sheet that admits they exist.
+ *
+ * One listener rather than several: the sheet has to swallow Esc before the
+ * cancel binding sees it, and two independent handlers would both fire.
+ */
+function wireKeys() {
+  // id -> the button that opens it. Only one may be up at a time, and Escape
+  // has to reach whichever that is before anything else sees the key.
+  const sheets = { keysheet: 'btn-keys', prefsheet: 'btn-prefs' };
+
+  const show = (id, on) => {
+    for (const other of Object.keys(sheets)) {
+      const el = $(other);
+      const open = other === id && on;
+      el.hidden = !open;
+      $(sheets[other]).setAttribute('aria-expanded', String(open));
+    }
+  };
+  const anyOpen = () => Object.keys(sheets).find((id) => !$(id).hidden);
+
+  for (const [id, btn] of Object.entries(sheets)) {
+    $(btn).onclick = () => show(id, $(id).hidden);
+    $(id + '-close').onclick = () => show(id, false);
+    // Clicking the backdrop closes; clicking the card must not.
+    $(id).onclick = (e) => {
+      if (e.target === $(id)) show(id, false);
+    };
+  }
+
   document.addEventListener('keydown', (e) => {
-    if (!state.entries.length) return;
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    // A text field owns its own keystrokes - "?" in the output path is a "?".
+    const typing =
+      e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT';
+
+    if (e.key === 'Escape') {
+      const open = anyOpen();
+      if (open) {
+        show(open, false);
+      } else if (state.converting) {
+        $('btn-cancel').click();
+      }
+      return;
+    }
+
+    if (e.key === '?' && !typing) {
+      e.preventDefault();
+      show('keysheet', $('keysheet').hidden);
+      return;
+    }
+
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (!state.converting) $('btn-convert').click();
+      return;
+    }
+
+    if ((e.key === 'o' || e.key === 'O') && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      $('btn-add-files').click();
+      return;
+    }
+
+    // arrow keys move through the file list
+    if (typing || !state.entries.length) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const d = e.key === 'ArrowDown' ? 1 : -1;
@@ -963,6 +1036,8 @@ window.addEventListener('pywebviewready', async () => {
     $('ctx-wrap').hidden = false;
     $('ctx').checked = !!ctx.enabled;
   }
+  // No gear at all off Windows - an empty settings sheet is worse than none.
+  $('btn-prefs').hidden = !(assoc.supported || ctx.supported);
   state.ready = true;
   await refreshLayers();
   await refreshCrypto();

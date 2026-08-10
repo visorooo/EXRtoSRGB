@@ -184,6 +184,13 @@ class Select {
       const item = document.createElement('div');
       item.className = 'select-item';
       item.setAttribute('role', 'option');
+      // A disabled <option> is invisible in the native select, which is hidden -
+      // so without this the panel offers a choice the value can never take.
+      if (opt.disabled) {
+        item.setAttribute('data-disabled', '');
+        item.setAttribute('aria-disabled', 'true');
+        if (opt.title) item.title = opt.title;
+      }
       if (i === this.native.selectedIndex) {
         item.setAttribute('data-state', 'checked');
         item.setAttribute('aria-selected', 'true');
@@ -199,8 +206,10 @@ class Select {
         item.insertAdjacentHTML('beforeend', CHECK);
       }
 
-      item.addEventListener('mouseenter', () => this.setHighlight(i, false));
-      item.addEventListener('click', () => this.commit(i));
+      if (!opt.disabled) {
+        item.addEventListener('mouseenter', () => this.setHighlight(i, false));
+        item.addEventListener('click', () => this.commit(i));
+      }
       this.viewport.appendChild(item);
     });
   }
@@ -222,8 +231,30 @@ class Select {
     if (el) el.scrollIntoView({ block: 'nearest', behavior });
   }
 
+  /*
+   * The next selectable index from `from`, walking in `dir`.
+   *
+   * Returns `from` itself when nothing is reachable, so a list that is entirely
+   * disabled cannot move the highlight or spin forever.
+   */
+  nextEnabled(from, dir) {
+    const opts = this.options;
+    for (let i = from + dir; i >= 0 && i < opts.length; i += dir) {
+      if (!opts[i].disabled) return i;
+    }
+    return this.highlight;
+  }
+
+  firstEnabled(dir) {
+    const opts = this.options;
+    const start = dir > 0 ? 0 : opts.length - 1;
+    if (opts[start] && !opts[start].disabled) return start;
+    return this.nextEnabled(start, dir);
+  }
+
   commit(i) {
     if (i < 0 || i >= this.options.length) return;
+    if (this.options[i].disabled) return;
     const changed = i !== this.native.selectedIndex;
     this.native.selectedIndex = i;
     this.sync();
@@ -246,23 +277,22 @@ class Select {
 
   onPanelKey(e) {
     if (!this.open) return;
-    const last = this.options.length - 1;
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        this.setHighlight(Math.min(last, this.highlight + 1));
+        this.setHighlight(this.nextEnabled(this.highlight, 1));
         break;
       case 'ArrowUp':
         e.preventDefault();
-        this.setHighlight(Math.max(0, this.highlight - 1));
+        this.setHighlight(this.nextEnabled(this.highlight, -1));
         break;
       case 'Home':
         e.preventDefault();
-        this.setHighlight(0);
+        this.setHighlight(this.firstEnabled(1));
         break;
       case 'End':
         e.preventDefault();
-        this.setHighlight(last);
+        this.setHighlight(this.firstEnabled(-1));
         break;
       case 'Enter':
       case ' ':
@@ -288,6 +318,7 @@ class Select {
     this.typeahead += ch.toLowerCase();
     this.typeaheadTimer = setTimeout(() => (this.typeahead = ''), 600);
     const i = this.options.findIndex((o) =>
+      !o.disabled &&
       o.textContent.trim().toLowerCase().startsWith(this.typeahead));
     if (i >= 0) this.setHighlight(i);
   }

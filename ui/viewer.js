@@ -185,6 +185,18 @@ function wire() {
   on('v100', 'click', () => actualPixels());
   on('vconvert', 'click', () => openMenu());
 
+  on('vswatch', 'click', async () => {
+    if (!lastHex) return;
+    await window.pywebview.api.copy_text(lastHex);
+    toast(`Copied ${lastHex}`);
+  });
+
+  on('vkeys', 'click', () => toggleSheet());
+  on('vsheet-close', 'click', () => toggleSheet(false));
+  on('vsheet', 'click', (e) => {
+    if (e.target === $('vsheet')) toggleSheet(false);
+  });
+
   // exposure / gamma
   const exp = $('vexp');
   const gam = $('vgam');
@@ -239,8 +251,10 @@ function wire() {
     else if (k === '1') actualPixels();
     else if (k === '+' || k === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
     else if (k === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.25);
+    else if (k === '?' || (k === '/' && e.shiftKey)) toggleSheet();
     else if (k === 'escape') {
-      if (menuEl) closeMenu();
+      if (!$('vsheet').hidden) toggleSheet(false);
+      else if (menuEl) closeMenu();
       else window.pywebview.api.close_window();
     }
     else if (['r', 'g', 'b', 'a'].includes(k)) {
@@ -256,6 +270,12 @@ function wire() {
     applyTransform();
     closeMenu();
   });
+}
+
+function toggleSheet(force) {
+  const el = $('vsheet');
+  if (!el) return;
+  el.hidden = force === undefined ? !el.hidden : !force;
 }
 
 /* ---------------------------------------------------------------------------
@@ -364,6 +384,7 @@ async function runConvert(preset) {
 }
 
 let probeTimer = null;
+let lastHex = null;
 function probeAt(e) {
   const img = $('vimg');
   if (!img.src) return;
@@ -376,11 +397,21 @@ function probeAt(e) {
   }
   clearTimeout(probeTimer);
   probeTimer = setTimeout(async () => {
-    const p = await window.pywebview.api.probe(u, v);
+    const p = await window.pywebview.api.probe(u, v, V.exposure, V.gamma);
     if (!p || p.r === undefined) return;
     const a = p.a === null || p.a === undefined ? '—' : p.a.toFixed(3);
     $('vprobe').textContent =
-      `${p.x},${p.y}   ${p.r.toFixed(4)} ${p.g.toFixed(4)} ${p.b.toFixed(4)}   a ${a}`;
+      `${p.x},${p.y}   ${p.r.toFixed(4)} ${p.g.toFixed(4)} ${p.b.toFixed(4)}` +
+      `   a ${a}   ${p.hex || ''}`;
+    if (p.hex) {
+      const sw = $('vswatch');
+      sw.hidden = false;
+      // alpha kept on the chip so a soft edge does not read as solid colour
+      const al = p.a === null || p.a === undefined ? 1 : Math.min(1, Math.max(0, p.a));
+      sw.style.setProperty('--swatch',
+        `rgb(${p.dr} ${p.dg} ${p.db} / ${al})`);
+      lastHex = p.hex;
+    }
   }, 35);
 }
 

@@ -411,7 +411,11 @@ has, solved once for both.
 Each of these was checked against the code rather than taken at face value. Order
 is by cost of leaving it alone, not by effort.
 
-### 1. Viewer export ignores the selected layer *(bug — do first)*
+**Items 1–6 shipped in v2.1.** They are kept here with what was actually found,
+because the trace is the useful part. Items 7 and 8 were dropped by decision, not
+by cost — the reasoning below still stands if either comes back.
+
+### 1. Viewer export ignores the selected layer *(bug — do first)* — **done**
 
 **Confirmed.** `ViewerApi.convert()` calls `convert_cli()`, which builds its
 settings with `"layer": None`. That re-runs beauty auto-detection, so exporting
@@ -419,52 +423,63 @@ while Ambient Occlusion is on screen writes the beauty instead — silently, and
 file looks plausible.
 
 This is the same shape as the bug that shipped through the whole of v1.0: wrong
-output that nobody notices because nothing looks broken. The fix is small — thread
-the session's layer through `convert()` into the settings — and the filename should
-carry the layer too, so `shot.exr` viewed on AO becomes
-`shot_Ambient_Occlusion_srgb.png` rather than colliding with the beauty export.
+output that nobody notices because nothing looks broken.
 
-### 2. Read a whole sequence from one dropped frame
+*Fixed* by threading `self._session.layer` through `convert()` into the settings,
+and by naming the file after the layer via a new `core.layer_tag()`. Verified on a
+three-layer EXR: the same source now yields `_Combined_srgb.png`,
+`_Ambient_Occlusion_srgb.png` and `_Diffuse_Color_srgb.png` with different pixels —
+AO comes out achromatic, the beauty does not. Without the tag the second export
+would have overwritten the first, so both halves were needed.
+
+### 2. Read a whole sequence from one dropped frame — **done**
 
 **Confirmed missing.** `group_sequences` only groups files that were actually
-added, so dropping `beauty.0001.exr` gives a single entry; only dropping the folder
-collapses the run. Every other tool in this space expands from one frame.
+added, so dropping `beauty.0001.exr` gave a single entry; only dropping the folder
+collapsed the run.
 
-`_FRAME_RE` and the grouping already exist, so this is a `find_siblings()` helper
-called from `_add_paths`: match stem, padding and extension in the same directory.
-Worth logging how many frames it pulled in — quietly turning one file into 240 is
-surprising otherwise.
+*Fixed* with `core.find_sequence_siblings()`, called from `_add_paths`. It matches
+stem, padding **and** extension in the same directory — padding because
+`shot.0001.exr` and `shot.000001.exr` are two different runs, extension because a
+`.png` render beside the `.exr` is not part of it.
 
-### 3. One converter instance, unlimited viewers
+The count is reported ("11 pulled in from the sequence"), since quietly turning one
+file into 240 is surprising otherwise.
 
-**Confirmed missing** — there is no guard of any kind. A named mutex at startup is
-the usual answer: if the converter is already running, focus it instead of opening
-a second one.
+### 3. One converter instance, unlimited viewers — **done**
 
-The split matters: `--view` must stay unrestricted, since opening several images at
-once is the point of a viewer. Note the in-app button already makes extra viewers
-as windows in one process; only double-click spawns new ones.
+**Confirmed missing** — there was no guard of any kind.
 
-### 4. Cryptomatte: Ctrl picks, Alt unpicks
+*Fixed* with a named mutex, claimed in `main()` **after** the `--view` and
+`--convert` early returns. That ordering is the whole design: opening several
+images at once is the point of a viewer, and the shell's right-click convert has to
+run whether or not a converter window is open. Only the converter is single.
 
-Currently Ctrl-click toggles. Splitting it into add and remove is a few lines and
-is more predictable when working quickly, since you stop having to remember what
-state a given object is in.
+### 4. Cryptomatte: Ctrl picks, Alt unpicks — **done**
 
-### 5. Hex and a swatch in the pixel probe, click to copy
+Ctrl-click used to toggle. Now Ctrl adds and Alt removes, which is more predictable
+when working quickly because you stop having to remember what state a given object
+is already in. The hint under the preview says so.
 
-The probe reports linear scene values, which is right for judging a render but is
-not what a hex code means. A useful hex is the **display** value — what is actually
-on screen — so the probe should return both, show a small colour chip, and copy the
-hex on click.
+### 5. Hex and a swatch in the pixel probe, click to copy — **done**
 
-### 6. A shortcuts panel
+The probe reported linear scene values, which is right for judging a render but is
+not what a hex code means.
 
-The viewer already has F, 1, +/−, R/G/B/A, C and Esc, and the converter has arrow
-keys; none of it is discoverable. A panel listing them is cheap and makes
-everything else findable.
+*Fixed*: `ViewerSession.sample()` now returns the display values and the hex
+alongside the linear ones, so the chip and the copied string are what is on screen.
+Exposure moves the hex and leaves the linear reading alone — a test asserts both.
+Copying goes through Win32 from Python, because `navigator.clipboard` is
+unavailable on a `file://` origin.
 
-### 7. Video output for sequences — recommend not bundling
+### 6. A shortcuts panel — **done**
+
+Both windows have one now, opened with **?** or the toolbar button. The markup
+differs but the styles are shared from `app.css`, so the two read as the same app.
+Added `Ctrl+Enter` (convert), `Ctrl+O` (add files) and `Esc` (cancel) while
+documenting, since a panel listing three things is not worth opening.
+
+### 7. Video output for sequences — *dropped* (recommend not bundling)
 
 **The cost is licensing, not code.** OIIO cannot write video and there is no ffmpeg
 on this machine, so shipping this means bundling an encoder: roughly +80 MB on a
@@ -477,7 +492,7 @@ not. Zero bundle cost, no licensing obligation, and anyone who wants video alrea
 has Resolve, After Effects or ffmpeg. The tool keeps writing image sequences, which
 is what those applications want as input anyway.
 
-### 8. macOS — possible, but the best parts do not port
+### 8. macOS — *dropped* (possible, but the best parts do not port)
 
 `core.py` is already portable: OIIO, OCIO and numpy all run on macOS, and pywebview
 uses WebKit there. The converter and viewer windows would work.

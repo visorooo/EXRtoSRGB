@@ -67,6 +67,16 @@ def read_u8(path):
     return arr.reshape(spec.height, spec.width, spec.nchannels)
 
 
+def read_f32(path):
+    """Normalised 0-1 pixels, so 8- and 16-bit files compare on one scale."""
+    src = oiio.ImageInput.open(path)
+    assert src is not None, "could not open %s" % path
+    spec = src.spec()
+    arr = np.array(src.read_image(format="float"), dtype=np.float32)
+    src.close()
+    return arr.reshape(spec.height, spec.width, spec.nchannels)
+
+
 def _decode(uri):
     """Decode a preview data URI back to pixels for assertions."""
     import base64, tempfile
@@ -228,6 +238,40 @@ def test_unpremult_pair_is_symmetric(tmp_path):
     on, _ = core.convert_one(src, settings(tmp_path, unpremult=True, suffix="_on"))
     off, _ = core.convert_one(src, settings(tmp_path, unpremult=False, suffix="_off"))
     assert np.array_equal(read_u8(on), read_u8(off))
+
+
+def test_partial_alpha_output_is_associated(tmp_path):
+    """
+    On a half-covered pixel the file must carry `alpha * f(colour)`.
+
+    This is the relationship that pins down all three of: un-premultiply
+    happened, the transform saw true surface colour, and alpha went back on
+    exactly once. A missing re-premultiply gives f(colour) - too bright - and
+    premultiplying an already-premultiplied image gives alpha * f(alpha *
+    colour), the dark edge fringe. Checked against a real production render:
+    this formula matches After Effects to under one 8-bit level, while the
+    double-premultiplied variant is out by 9.
+    """
+    half = _synthetic_alpha_exr(str(tmp_path / "half.exr"), cov=0.5)
+    full = _synthetic_alpha_exr(str(tmp_path / "full.exr"), cov=1.0)
+    s = lambda tag: settings(tmp_path, bits=16, suffix=tag)   # noqa: E731
+
+    got = read_f32(core.convert_one(half, s("_half"))[0])
+    opaque = read_f32(core.convert_one(full, s("_full"))[0])
+
+    a = got[0, 0, 3]
+    assert 0.49 < a < 0.51, "fixture should be half covered"
+    # f(colour) is what the fully opaque render of the same colour produced
+    expected = opaque[0, 0, :3] * a
+    assert np.allclose(got[0, 0, :3], expected, atol=1.5 / 255), (
+        "partial-alpha RGB %s is not alpha*f(colour) %s"
+        % (got[0, 0, :3], expected))
+
+    # and rule the two failure modes out explicitly
+    assert not np.allclose(got[0, 0, :3], opaque[0, 0, :3], atol=1.5 / 255), \
+        "output is straight alpha - the re-premultiply is missing"
+    assert not np.allclose(got[0, 0, :3], opaque[0, 0, :3] * a * a,
+                           atol=1.5 / 255), "alpha was applied twice"
 
 
 def test_flatten_on_white(tmp_path):
@@ -852,6 +896,117 @@ def test_probe_clamps_out_of_range(tmp_path):
 def test_render_before_load_raises(tmp_path):
     with pytest.raises(RuntimeError):
         core.ViewerSession().render(settings(tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# Layer naming and sequence expansion
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("layer,expected", [
+    ("Ambient Occlusion", "_Ambient_Occlusion"),
+    ("ViewLayer.Diffuse Color", "_Diffuse_Color"),   # view layer prefix dropped
+    ("ViewLayer.CryptoObject00", "_CryptoObject00"),
+    ("", ""),
+    (None, ""),
+])
+def test_layer_tag(layer, expected):
+    assert core.layer_tag(layer) == expected
+
+
+def test_layer_tag_prevents_collisions(tmp_path):
+    """
+    Two layers of the same EXR must not write the same filename.
+
+    This is the other half of the export bug: even once the right layer is
+    read, an unqualified name means the second export silently replaces the
+    first.
+    """
+    names = []
+    for layer in ("Beauty", "Ambient Occlusion"):
+        s = settings(tmp_path, suffix=core.layer_tag(layer) + "_srgb")
+        names.append(core.output_path_for("/r/shot.exr", s))
+    assert len(set(names)) == 2
+
+
+def _seq_files(tmp_path, stem="beauty", n=5, pad=4, ext=".exr"):
+    made = []
+    for i in range(1, n + 1):
+        p = tmp_path / ("%s.%0*d%s" % (stem, pad, i, ext))
+        p.write_bytes(b"x")
+        made.append(str(p))
+    return made
+
+
+def test_siblings_expand_from_one_frame(tmp_path):
+    made = _seq_files(tmp_path)
+    got = core.find_sequence_siblings(made[0])
+    assert sorted(got) == sorted(made)
+
+
+def test_siblings_ignore_a_different_stem(tmp_path):
+    a = _seq_files(tmp_path, "beauty")
+    _seq_files(tmp_path, "beauty_v2")
+    assert sorted(core.find_sequence_siblings(a[0])) == sorted(a)
+
+
+def test_siblings_ignore_different_padding(tmp_path):
+    a = _seq_files(tmp_path, "shot", n=3, pad=4)
+    _seq_files(tmp_path, "shot", n=3, pad=6)
+    got = core.find_sequence_siblings(a[0])
+    assert all(len(os.path.basename(p).split(".")[1]) == 4 for p in got)
+    assert len(got) == 3
+
+
+def test_siblings_ignore_other_extensions(tmp_path):
+    a = _seq_files(tmp_path, "plate", n=3, ext=".exr")
+    _seq_files(tmp_path, "plate", n=3, ext=".png")
+    got = core.find_sequence_siblings(a[0])
+    assert len(got) == 3 and all(p.endswith(".exr") for p in got)
+
+
+def test_unnumbered_file_returns_itself(tmp_path):
+    p = tmp_path / "still.exr"
+    p.write_bytes(b"x")
+    assert core.find_sequence_siblings(str(p)) == [str(p)]
+
+
+def test_expanded_frames_group_into_one_entry(tmp_path):
+    made = _seq_files(tmp_path, "beauty", n=8)
+    entries = core.group_sequences(core.find_sequence_siblings(made[0]))
+    assert len(entries) == 1
+    assert entries[0]["kind"] == "sequence" and entries[0]["count"] == 8
+
+
+# ---------------------------------------------------------------------------
+# Probe display values
+# ---------------------------------------------------------------------------
+
+def test_probe_returns_hex_of_the_display_colour(tmp_path):
+    """
+    A hex has to be the colour on screen. Hex of the linear value would read
+    near-black for anything normally exposed and match nothing pasted elsewhere.
+    """
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path, value=0.18))
+    p = v.sample(0.5, 0.5, settings(tmp_path))
+    assert p["r"] == pytest.approx(0.18)          # linear, unchanged
+    # 0.18 through the ACES curve is 91 -> 0x5B
+    assert p["dr"] == 91 and p["hex"] == "#5B5B5B"
+
+
+def test_probe_hex_follows_exposure(tmp_path):
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path, value=0.18))
+    base = v.sample(0.5, 0.5, settings(tmp_path))
+    up = v.sample(0.5, 0.5, settings(tmp_path), exposure=1.0)
+    assert up["dr"] > base["dr"], "hex must track what is on screen"
+    assert up["r"] == base["r"], "the linear value is the pixel and must not move"
+
+
+def test_probe_without_settings_has_no_hex(tmp_path):
+    v = core.ViewerSession()
+    v.load(_hdr_rgba(tmp_path))
+    assert "hex" not in v.sample(0.5, 0.5)
 
 
 # ---------------------------------------------------------------------------
