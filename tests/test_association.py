@@ -86,6 +86,40 @@ def test_sample_for_the_open_with_dialog_exists():
     assert path.lower().endswith(".exr")
 
 
+@windows_only
+def test_our_own_user_choice_is_never_deleted(monkeypatch):
+    """
+    The one thing that makes us the default must survive re-registering.
+
+    A UserChoice naming us is the only mechanism that beats an application
+    owning .exr machine-wide. `set_association(True)` used to clear it
+    unconditionally, so every install, upgrade and tick of the toggle handed
+    the file type straight back.
+    """
+    deleted = []
+    monkeypatch.setattr(app, "_user_choice", lambda: app.PROG_ID)
+    import winreg
+    monkeypatch.setattr(winreg, "DeleteKey",
+                        lambda *a: deleted.append(a))
+    assert app._clear_user_choice() == []
+    assert deleted == []
+
+
+@windows_only
+def test_a_foreign_user_choice_is_still_cleared(monkeypatch):
+    monkeypatch.setattr(app, "_user_choice", lambda: "Photoshop.OpenEXRFile.200")
+    calls = []
+
+    def fake_nuke(hive, path, *a, **k):
+        calls.append(path)
+        raise OSError("no such key")
+
+    import winreg
+    monkeypatch.setattr(winreg, "OpenKey", fake_nuke)
+    app._clear_user_choice()
+    assert any("UserChoice" in c for c in calls)
+
+
 def test_register_flags_select_parts():
     """
     The installer's two checkboxes have to be independent.

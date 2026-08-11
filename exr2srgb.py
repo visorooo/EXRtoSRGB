@@ -483,14 +483,22 @@ def _user_choice():
 
 def _clear_user_choice():
     """
-    Drop Windows' recorded default so our ProgID is reachable again.
+    Drop a *foreign* recorded default so our ProgID is reachable again.
 
     The Hash beside it is signed per user and cannot be forged, so there is no
-    way to *write* a UserChoice - but deleting is allowed, and Explorer then
-    falls back to the class registration. This is what makes the toggle able to
-    take effect at all once the user has ever picked a default by hand.
+    way to write a UserChoice - but deleting is allowed.
+
+    **It must never delete our own.** Once the user has set .exr to this app in
+    Settings, that UserChoice is the only thing making us the default: nothing
+    else outranks an application that owns the type machine-wide. Deleting it
+    hands .exr straight back to Photoshop. Until 3.1.1 this ran unconditionally
+    at the end of every `set_association(True)`, so every install, upgrade and
+    tick of the toggle silently undid the one thing that worked.
     """
     import winreg
+
+    if _user_choice() == PROG_ID:
+        return []
 
     def nuke(path):
         try:
@@ -627,16 +635,15 @@ def choose_default(hwnd=0):
     from ctypes import wintypes
 
     if _is_windows_11():
-        # The deep link needs the name exactly as RegisteredApplications has
-        # it. Falls back to the page itself, where .exr is searchable.
+        # `registeredAppUser=` is accepted but does not scroll to a desktop
+        # app's row - measured, the page opens at the top of an alphabetical
+        # list of every application on the machine. So there is no point
+        # pretending: open the page and let the caller say which box to type
+        # `.exr` into, which is the fast route anyway.
         try:
-            os.startfile("ms-settings:defaultapps?registeredAppUser=%s"
-                         % APP_NAME)
+            os.startfile("ms-settings:defaultapps")
         except OSError:
-            try:
-                os.startfile("ms-settings:defaultapps")
-            except OSError:
-                return False
+            return False
         return association_state()[0]
 
     class OPENASINFO(ctypes.Structure):
