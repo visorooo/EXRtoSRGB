@@ -94,6 +94,38 @@
   image-rendering: auto;
 }
 
+/* --------------------------------------------------------------------------
+ * A/B
+ * ------------------------------------------------------------------------ */
+
+/* B sits directly on A under the same transform, so a wipe is a clip rather
+   than a second layout to keep in sync. */
+.vimgb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  user-select: none;
+  -webkit-user-drag: none;
+  image-rendering: pixelated;
+}
+
+.vimgb.smooth {
+  image-rendering: auto;
+}
+
+/* The wipe seam, so the boundary is visible over matching content - without it
+   two near-identical images look like one and the wipe seems broken. */
+.vwipe-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
 /* The full-resolution overlay. Sits exactly on top of the region it replaces,
    so there is no crossfade and nothing to line up by eye. */
 .vcrop {

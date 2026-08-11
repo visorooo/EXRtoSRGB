@@ -541,6 +541,10 @@ class ViewerApi:
         self._path = path
         self._session = core.ViewerSession()
         self._layers = []
+        # The comparison image. A second session rather than reloading one,
+        # because the whole point is flipping between them without a decode.
+        self._b_path = None
+        self._b_session = None
 
     def _settings(self):
         prefs = load_prefs()
@@ -580,6 +584,68 @@ class ViewerApi:
             return {"uri": uri, "width": w, "height": h,
                     "full_width": full_w, "full_height": full_h,
                     "layer": self._session.layer}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # -- A/B comparison ---------------------------------------------------
+
+    def pick_compare(self):
+        """Choose the image to compare against."""
+        if not self._window:
+            return {"ok": False}
+        picked = self._window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=False,
+            file_types=("OpenEXR (*.exr)", "All files (*.*)"))
+        if not picked:
+            return {"ok": False}
+        return self.load_compare(picked[0])
+
+    def load_compare(self, path):
+        try:
+            path = os.path.abspath(path)
+            sess = core.ViewerSession()
+            sess.load(path)
+            if sess.size != self._session.size:
+                return {"ok": False,
+                        "error": "%d x %d does not match this image's %d x %d"
+                                 % (sess.size + self._session.size)}
+            self._b_session = sess
+            self._b_path = path
+            return {"ok": True, "name": os.path.basename(path),
+                    "layers": core.probe_layers(path)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def clear_compare(self):
+        self._b_session = None
+        self._b_path = None
+        return {"ok": True}
+
+    def render_b(self, exposure=0.0, gamma=1.0, channel="rgb", layer=None):
+        """Render the comparison image with the same settings as A."""
+        if self._b_session is None:
+            return {"error": "nothing to compare with"}
+        try:
+            if layer is not None:
+                self._b_session.load(self._b_path, layer)
+            uri, w, h = self._b_session.render(
+                self._settings(), exposure=float(exposure), gamma=float(gamma),
+                channel=str(channel), max_px=1600)
+            return {"uri": uri, "width": w, "height": h,
+                    "layer": self._b_session.layer,
+                    "name": os.path.basename(self._b_path)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def render_diff(self, exposure=0.0, gamma=1.0):
+        """|A - B| in linear, through the same display chain."""
+        if self._b_session is None:
+            return {"error": "nothing to compare with"}
+        try:
+            uri, w, h = core.render_difference(
+                self._session, self._b_session, self._settings(),
+                exposure=float(exposure), gamma=float(gamma), max_px=1600)
+            return {"uri": uri, "width": w, "height": h}
         except Exception as e:
             return {"error": str(e)}
 

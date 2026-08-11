@@ -73,9 +73,8 @@ between launches, so it is not somewhere to keep anything that matters.
 Dark remains the default, and is still the right choice when you are actually
 judging a render: a light surround biases how you read exposure and saturation.
 
-**Dropdowns matched to the VISOR invoice app.** That app gets its select from
-`@radix-ui/react-select`, which needs React, so `ui/select.js` rebuilds the same
-behaviour and motion in plain DOM — 140ms open from `scale(0.95)`, transform-origin
+**Animated dropdowns.** `@radix-ui/react-select` has the motion this wanted but
+needs React, so `ui/select.js` rebuilds the same behaviour in plain DOM — 140ms open from `scale(0.95)`, transform-origin
 anchored to the trigger, rotating chevron, `scale(0.97)` press, pop-in check mark,
 and one highlight state shared by pointer and keyboard. Full keyboard support
 including type-ahead.

@@ -1,11 +1,11 @@
 /*
- * Select — a custom dropdown matching the one in the VISOR invoice app.
+ * Select — a custom dropdown over a real, hidden <select>.
  *
- * That app gets this from @radix-ui/react-select, which needs React. This is the
- * same component's behaviour and motion rebuilt in plain DOM so the two tools
- * feel like one family: trigger scales on press, chevron rotates, the panel
- * grows out of the trigger it opened from, items highlight from pointer AND
- * keyboard through one state, and the check mark pops in.
+ * The motion this wants comes from @radix-ui/react-select, which needs React, so
+ * the behaviour is rebuilt here in plain DOM: the trigger scales on press, the
+ * chevron rotates, the panel grows out of the trigger it opened from, items
+ * highlight from pointer AND keyboard through one state, and the check mark
+ * pops in.
  *
  * It replaces a real <select> in place and keeps it in the DOM as the source of
  * truth, so `$('format').value` and `onchange` keep working exactly as before

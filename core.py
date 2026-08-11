@@ -1200,6 +1200,16 @@ class ViewerSession:
             rgb, alpha = self._crop(crop)
         else:
             rgb, alpha = self._at_size(max_px)
+        return self._encode(rgb, alpha, settings, exposure, gamma, channel)
+
+    def _encode(self, rgb, alpha, settings, exposure, gamma, channel):
+        """
+        Exposure, display transform, gamma, channel isolation -> data URI.
+
+        Split out so the difference view goes through exactly the same chain as
+        a normal render; two encode paths would drift and the comparison would
+        be measuring the drift rather than the images.
+        """
         h, w = rgb.shape[:2]
 
         # apply_transform writes in place, so the cached copy must not be handed
@@ -1265,6 +1275,33 @@ class ViewerSession:
                                                int(rgb8[2]))
             out["hex"] = "#%02X%02X%02X" % (rgb8[0], rgb8[1], rgb8[2])
         return out
+
+
+def render_difference(a, b, settings, exposure=0.0, gamma=1.0, max_px=1024):
+    """
+    |A - B| in linear, through the same display chain as a normal render.
+
+    Difference is taken in **linear**, not on display values: the tone curve is
+    steep in the shadows and shallow in the highlights, so a difference measured
+    after it would exaggerate dark mismatches and hide bright ones. Taken before,
+    a difference of 0.01 means the same thing wherever it happens - and exposure
+    then works as the gain control for reading small ones, which is what it
+    already is everywhere else in this app.
+
+    Returns (uri, w, h). Raises ValueError if the two are different sizes, since
+    a resized comparison would be measuring the resampler.
+    """
+    if a.size != b.size:
+        raise ValueError("different sizes: %dx%d and %dx%d"
+                         % (a.size[0], a.size[1], b.size[0], b.size[1]))
+    rgb_a, alpha_a = a._at_size(max_px)
+    rgb_b, _ = b._at_size(max_px)
+    if rgb_a.shape != rgb_b.shape:
+        raise ValueError("layers do not line up")
+    diff = np.abs(rgb_a - rgb_b)
+    # Alpha carried from A so the surround still reads as transparent rather
+    # than as a region that happens to match.
+    return a._encode(diff, alpha_a, settings, exposure, gamma, "rgb")
 
 
 def _png_data_uri(arr, W, H, nchannels):

@@ -33,6 +33,19 @@
         <button class="ghost" id="vfit" title="Fit to window (F)">Fit</button>
         <button class="ghost" id="v100" title="Actual pixels (1)">1:1</button>
 
+        <!--
+          A/B. Hidden until a second image is loaded, because three of the four
+          modes mean nothing without one.
+        -->
+        <button class="ghost" id="vcompare"
+                title="Compare against another EXR">Compare…</button>
+        <div class="seg" id="vabmodes" hidden>
+          <button class="is-active" data-ab="a" title="Show A">A</button>
+          <button data-ab="b" title="Show B">B</button>
+          <button data-ab="wipe" title="Wipe between them">Wipe</button>
+          <button data-ab="diff" title="|A − B| in linear">Diff</button>
+        </div>
+
         <!-- same presets as the Explorer right-click menu, built from one list -->
         <div class="vmenu-wrap">
           <button id="vconvert" aria-haspopup="menu" aria-expanded="false">
@@ -56,6 +69,13 @@
           would be stale, which is any time the view is moving.
         -->
         <img id="vcrop" class="vcrop" alt="" draggable="false" hidden />
+        <!--
+          B sits on top of A under the same transform, so wiping is a clip
+          rather than a second layout. In Diff mode this is hidden and A's own
+          src carries the difference.
+        -->
+        <img id="vimgb" class="vimgb" alt="" draggable="false" hidden />
+        <div class="vwipe-line" id="vwipe-line" hidden></div>
         <div class="vloading" id="vloading">Loading…</div>
       </div>
 
@@ -71,6 +91,12 @@
         <output class="vnum" id="vgam-val">1.00</output>
 
         <button class="ghost" id="vreset" title="Reset exposure and gamma">Reset</button>
+
+        <!-- only meaningful in wipe mode, so it is not there otherwise -->
+        <label class="lbl" for="vwipe" id="vwipe-lbl" hidden>Wipe</label>
+        <input type="range" id="vwipe" min="0" max="100" step="0.5" value="50"
+               autocomplete="off" hidden />
+
         <span class="spacer"></span>
         <!-- holds one reading still, so it can be read off and pasted -->
         <button class="icon eyedrop" id="vpick" aria-pressed="false"
@@ -108,6 +134,7 @@
             <dt>R G B A</dt><dd>Isolate a channel</dd>
             <dt>C</dt><dd>Back to colour</dd>
             <dt>E</dt><dd>Eyedropper — click a pixel to lock and copy it</dd>
+            <dt>\</dt><dd>Cycle A / B / Wipe / Difference</dd>
             <dt>Click swatch</dt><dd>Copy hex under the cursor</dd>
             <dt>?</dt><dd>This list</dd>
             <dt>Esc</dt><dd>Close the window</dd>

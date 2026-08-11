@@ -265,7 +265,7 @@ button:hover:not(:disabled) {
 }
 
 /* Pressable elements confirm the interface heard the user. Same scale and
-   easing as the VISOR invoice app, so the two tools feel related. */
+   easing throughout, so the whole interface moves the same way. */
 button:active:not(:disabled) {
   transform: scale(0.97);
 }
@@ -628,7 +628,7 @@ input[type='text']:focus {
  *
  * The real <select> stays in the DOM as the source of truth and is hidden;
  * select.js builds the trigger and panel around it. Timings and easing are
- * lifted from the VISOR invoice app's Radix select so the two match.
+ * modelled on Radix's select, rebuilt here without the React dependency.
  * ------------------------------------------------------------------------ */
 
 .select-native {

@@ -60,15 +60,101 @@ function sourceScale() {
 
 function applyTransform() {
   const img = $('vimg');
-  img.style.transform =
-    `translate(${V.x}px, ${V.y}px) scale(${V.zoom})`;
+  const t = `translate(${V.x}px, ${V.y}px) scale(${V.zoom})`;
+  img.style.transform = t;
   // Below 1:1 the browser's smooth scaling is right; above it, show the pixels.
   img.classList.toggle('smooth', sourceScale() < 1);
   $('vzoom').textContent = Math.round(sourceScale() * 100) + '%';
+  // B rides the same transform, so it cannot drift out of register.
+  const b = $('vimgb');
+  if (b) {
+    b.style.transform = t;
+    b.classList.toggle('smooth', sourceScale() < 1);
+  }
+  applyWipe();
   // Any movement invalidates the overlay before the new one arrives; leaving a
   // stale crop on screen would be worse than the upscale it replaces.
   hideCrop();
   scheduleCrop();
+}
+
+/* ---------------------------------------------------------------------------
+ * A/B comparison
+ *
+ * B is rendered with A's settings and laid on top under the same transform, so
+ * wiping is a clip and flipping is a class - neither costs a render. Only Diff
+ * asks Python for anything, because |A - B| is pixel work.
+ *
+ * The two images must be the same size. Comparing different sizes would mean
+ * resampling one of them, and then the difference is partly the resampler.
+ * ------------------------------------------------------------------------ */
+
+const AB = { has: false, mode: 'a', wipe: 50, name: null };
+
+function applyWipe() {
+  const line = $('vwipe-line');
+  const b = $('vimgb');
+  if (!line || !b) return;
+  if (!AB.has || AB.mode !== 'wipe') {
+    line.hidden = true;
+    b.style.clipPath = '';
+    return;
+  }
+  const stage = $('vstage').getBoundingClientRect();
+  const x = (AB.wipe / 100) * stage.width;
+  // Clip in screen space: the element is transformed, so a percentage inset
+  // would be measured in image pixels and slide as you zoom.
+  b.style.clipPath =
+    `polygon(${x}px 0, ${stage.width}px 0, ${stage.width}px ${stage.height}px, ${x}px ${stage.height}px)`;
+  line.style.left = x + 'px';
+  line.hidden = false;
+}
+
+async function setABMode(mode) {
+  if (!AB.has && mode !== 'a') return;
+  AB.mode = mode;
+  for (const btn of $('vabmodes').querySelectorAll('button')) {
+    btn.classList.toggle('is-active', btn.dataset.ab === mode);
+  }
+  const wipeOn = mode === 'wipe';
+  $('vwipe').hidden = !wipeOn;
+  $('vwipe-lbl').hidden = !wipeOn;
+
+  const b = $('vimgb');
+  if (mode === 'diff') {
+    b.hidden = true;
+    await render();          // render() routes to the difference in this mode
+  } else {
+    b.hidden = mode === 'a';
+    // Coming back from diff, A holds the difference image and must be redrawn.
+    await render();
+  }
+  applyTransform();
+}
+
+async function loadCompare(res) {
+  if (!res || !res.ok) {
+    if (res && res.error) toast(res.error, true);
+    return;
+  }
+  AB.has = true;
+  AB.name = res.name;
+  $('vabmodes').hidden = false;
+  $('vcompare').textContent = 'B: ' + res.name;
+  $('vcompare').title = 'Click to choose a different comparison image';
+  await refreshB();
+  await setABMode('wipe');
+  toast('Comparing against ' + res.name);
+}
+
+async function refreshB() {
+  if (!AB.has) return;
+  const r = await window.pywebview.api.render_b(V.exposure, V.gamma, V.channel);
+  if (!r || r.error) {
+    if (r && r.error) toast(r.error, true);
+    return;
+  }
+  $('vimgb').src = r.uri;
 }
 
 /* ---------------------------------------------------------------------------
@@ -111,6 +197,9 @@ async function renderCrop() {
    * it is most needed - on the large plates it exists for.
    */
   if (V.zoom <= 1.01 || V.fullW <= V.imgW) return;
+  // The overlay only knows about A, so it would sit on top of B or a
+  // difference and quietly show the wrong image.
+  if (AB.has && AB.mode !== 'a') return;
 
   const stage = $('vstage').getBoundingClientRect();
   // Visible rectangle, in source pixels.
@@ -188,22 +277,33 @@ async function render(refit = false) {
   const token = ++V.token;
   $('vloading').classList.add('on');
   try {
-    const r = await window.pywebview.api.render(
-      V.exposure, V.gamma, V.channel, V.layer);
+    const diff = AB.has && AB.mode === 'diff';
+    const r = diff
+      ? await window.pywebview.api.render_diff(V.exposure, V.gamma)
+      : await window.pywebview.api.render(
+          V.exposure, V.gamma, V.channel, V.layer);
     if (token !== V.token) return;
     if (r.error) {
       $('vmeta').textContent = r.error;
       return;
     }
+    // B follows A's exposure, gamma and channel, or the comparison is between
+    // two different treatments rather than two images.
+    if (AB.has && !diff) await refreshB();
     const img = $('vimg');
     const first = !V.imgW;
     img.src = r.uri;
     V.imgW = r.width;
     V.imgH = r.height;
-    V.fullW = r.full_width;
-    V.fullH = r.full_height;
-    $('vmeta').textContent =
-      `${r.full_width} × ${r.full_height}   ${r.layer === '' ? 'R,G,B' : r.layer}`;
+    // The difference render reports no source size - it is a derived image, not
+    // a file - so keep the ones A already established.
+    if (r.full_width) {
+      V.fullW = r.full_width;
+      V.fullH = r.full_height;
+    }
+    $('vmeta').textContent = diff
+      ? `${V.fullW} × ${V.fullH}   |A − B|  ·  raise exposure to read small differences`
+      : `${V.fullW} × ${V.fullH}   ${r.layer === '' ? 'R,G,B' : r.layer}`;
     if (first || refit) fit();
     else applyTransform();
   } finally {
@@ -280,6 +380,18 @@ function wire() {
     toast(`Copied ${lastHex}`);
   });
 
+  on('vcompare', 'click', async () => {
+    loadCompare(await window.pywebview.api.pick_compare());
+  });
+  for (const btn of ($('vabmodes') || { querySelectorAll: () => [] })
+       .querySelectorAll('button')) {
+    btn.onclick = () => setABMode(btn.dataset.ab);
+  }
+  on('vwipe', 'input', () => {
+    AB.wipe = parseFloat($('vwipe').value);
+    applyWipe();
+  });
+
   on('vpick', 'click', () => setPicking(!picking));
   on('vkeys', 'click', () => toggleSheet());
   on('vsheet-close', 'click', () => toggleSheet(false));
@@ -343,6 +455,12 @@ function wire() {
     else if (k === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.25);
     else if (k === '?' || (k === '/' && e.shiftKey)) toggleSheet();
     else if (k === 'e') setPicking(!picking);
+    // \ cycles A -> B -> Wipe -> Diff. One key rather than four, because the
+    // useful gesture is flipping back and forth, not jumping to a named mode.
+    else if (k === '\\' && AB.has) {
+      const order = ['a', 'b', 'wipe', 'diff'];
+      setABMode(order[(order.indexOf(AB.mode) + 1) % order.length]);
+    }
     else if (k === 'escape') {
       // Release a held colour before closing the window - Escape should undo
       // the last thing, not quit out from under a reading being copied.

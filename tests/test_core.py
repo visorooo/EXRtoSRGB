@@ -1172,6 +1172,53 @@ def test_crop_does_not_mutate_the_cached_layer(tmp_path):
     assert np.array_equal(first, again)
 
 
+def test_difference_of_identical_images_is_black(tmp_path):
+    a = core.ViewerSession(); a.load(_hdr_rgba(tmp_path, value=0.5))
+    b = core.ViewerSession(); b.load(_hdr_rgba(tmp_path, value=0.5))
+    px = _decode(core.render_difference(a, b, settings(tmp_path))[0])
+    assert int(px[..., :3].max()) == 0
+
+
+def test_difference_is_taken_in_linear(tmp_path):
+    """
+    Not on display values.
+
+    The tone curve is steep in the shadows and shallow in the highlights, so a
+    difference measured after it exaggerates dark mismatches and hides bright
+    ones. Taken before, the same linear gap reads the same wherever it happens.
+    Two pairs 0.1 apart in linear must therefore agree - through the display
+    curve they would not.
+    """
+    def diff(v1, v2):
+        a = core.ViewerSession(); a.load(_hdr_rgba(tmp_path, value=v1))
+        b = core.ViewerSession(); b.load(_hdr_rgba(tmp_path, value=v2))
+        return int(_decode(core.render_difference(a, b, settings(tmp_path))[0])[0, 0, 0])
+    dark = diff(0.10, 0.20)
+    bright = diff(1.00, 1.10)
+    assert dark == bright, "difference is not being taken in linear (%d vs %d)" % (
+        dark, bright)
+
+
+def test_difference_refuses_mismatched_sizes(tmp_path):
+    """Resizing one would make the comparison partly a measure of the resampler."""
+    other = tmp_path / "b"
+    other.mkdir()
+    a = core.ViewerSession(); a.load(_hdr_rgba(tmp_path, w=16, h=16))
+    b = core.ViewerSession(); b.load(_hdr_rgba(other, w=32, h=32))
+    with pytest.raises(ValueError, match="different sizes"):
+        core.render_difference(a, b, settings(tmp_path))
+
+
+def test_difference_does_not_mutate_either_cache(tmp_path):
+    other = tmp_path / "b"
+    other.mkdir()
+    a = core.ViewerSession(); a.load(_hdr_rgba(tmp_path, value=0.6))
+    b = core.ViewerSession(); b.load(_hdr_rgba(other, value=0.2))
+    before = _decode(a.render(settings(tmp_path))[0])
+    core.render_difference(a, b, settings(tmp_path), exposure=2.0)
+    assert np.array_equal(_decode(a.render(settings(tmp_path))[0]), before)
+
+
 def test_probe_without_settings_has_no_hex(tmp_path):
     v = core.ViewerSession()
     v.load(_hdr_rgba(tmp_path))

@@ -19,11 +19,11 @@ cli.py            the scriptable entry point. imports core only, never a window.
 app.ico           VISOR mark, multi-size. wired into the spec and the window.
 core.py           conversion. no UI imports. this is what the tests exercise.
 exr2srgb.py       pywebview window + the Api bridge exposed to JavaScript.
-ui/theme.css      VISOR warm-neutral palette, verbatim from invoice-app.
+ui/theme.css      the warm-neutral palette. colour tokens only, no layout.
 ui/app.css        application styles, built only on theme.css tokens.
 ui/index.html     markup.
 ui/app.js         front end. gathers settings, renders state. no pixel work.
-ui/select.js      custom dropdown, matching invoice-app's Radix select.
+ui/select.js      custom animated dropdown over a real hidden <select>.
 ui/visor-mark.svg the mark on its own, for anywhere it is needed standalone.
 ui/viewer.html    standalone viewer window: double-click, or the in-app button.
 ui/viewer.css     viewer chrome. the image is the interface, so this is thin.
@@ -233,9 +233,9 @@ does nothing at all.
 WebView2 restores form state from its profile across launches, which silently
 flipped un-premultiply off between runs. Do not rely on `checked` in the markup.
 
-**`ui/select.js`** — the invoice app gets its animated dropdown from
-`@radix-ui/react-select`, which needs React. This is the same behaviour and motion
-in plain DOM. The real `<select>` stays in the document as the source of truth and
+**`ui/select.js`** — an animated dropdown matching the rest of the interface,
+without pulling in React for `@radix-ui/react-select`. Same behaviour and motion in
+plain DOM. The real `<select>` stays in the document as the source of truth and
 is visually hidden, so `$('format').value` and `onchange` keep working and nothing
 else has to know the component exists.
 
