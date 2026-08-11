@@ -102,12 +102,72 @@ function applyWipe() {
   }
   const stage = $('vstage').getBoundingClientRect();
   const x = (AB.wipe / 100) * stage.width;
-  // Clip in screen space: the element is transformed, so a percentage inset
-  // would be measured in image pixels and slide as you zoom.
-  b.style.clipPath =
-    `polygon(${x}px 0, ${stage.width}px 0, ${stage.width}px ${stage.height}px, ${x}px ${stage.height}px)`;
+  /*
+   * The line is a child of the stage and untransformed, so it lives in screen
+   * pixels. The image is transformed, and clip-path is applied in the element's
+   * OWN coordinate space *before* that transform - so the same number means two
+   * different places. Convert, or the seam only lines up with the line at zoom
+   * 1 with no pan, and slides away the moment you touch either.
+   */
+  const local = (x - V.x) / (V.zoom || 1);
+  b.style.clipPath = `inset(0 0 0 ${local}px)`;
   line.style.left = x + 'px';
   line.hidden = false;
+}
+
+/*
+ * Drag the seam itself.
+ *
+ * A wipe you can only move from a slider in the footer is a wipe nobody uses -
+ * the gesture is grabbing the line. The handle stops the event reaching the
+ * stage, so dragging the seam does not also pan the image; dragging anywhere
+ * else still pans as before.
+ */
+function wireWipeDrag() {
+  const line = $('vwipe-line');
+  if (!line) return;
+  let dragging = false;
+
+  const setFrom = (clientX) => {
+    const stage = $('vstage').getBoundingClientRect();
+    const pct = ((clientX - stage.left) / stage.width) * 100;
+    AB.wipe = Math.max(0, Math.min(100, pct));
+    $('vwipe').value = String(AB.wipe);
+    applyWipe();
+  };
+
+  line.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    line.classList.add('is-dragging');
+    try {
+      line.setPointerCapture(e.pointerId);
+    } catch (_) {
+      /* capture is an optimisation, not a requirement */
+    }
+    // Keep it away from the stage, or the pan starts underneath the drag.
+    e.stopPropagation();
+    e.preventDefault();
+  });
+
+  line.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    setFrom(e.clientX);
+    e.stopPropagation();
+  });
+
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    line.classList.remove('is-dragging');
+    try {
+      line.releasePointerCapture(e.pointerId);
+    } catch (_) {
+      /* may already be gone */
+    }
+    e.stopPropagation();
+  };
+  line.addEventListener('pointerup', end);
+  line.addEventListener('pointercancel', end);
 }
 
 async function setABMode(mode) {
@@ -391,6 +451,7 @@ function wire() {
     AB.wipe = parseFloat($('vwipe').value);
     applyWipe();
   });
+  wireWipeDrag();
 
   on('vpick', 'click', () => setPicking(!picking));
   on('vkeys', 'click', () => toggleSheet());

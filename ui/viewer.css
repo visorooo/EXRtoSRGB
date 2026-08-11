@@ -120,10 +120,40 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 1px;
+  width: 2px;
+  margin-left: -1px;
   background: var(--accent);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
-  pointer-events: none;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+}
+
+/* A 2px line is not a grabbable target. This widens the hit area to 20px
+   without widening what is drawn. */
+.vwipe-line::before {
+  content: '';
+  position: absolute;
+  inset: 0 -9px;
+}
+
+/* The grip, so it reads as something you can take hold of. */
+.vwipe-line::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 34px;
+  margin: -17px 0 0 -6px;
+  border-radius: 6px;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+}
+
+.vwipe-line:hover,
+.vwipe-line.is-dragging {
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6);
 }
 
 /* The full-resolution overlay. Sits exactly on top of the region it replaces,

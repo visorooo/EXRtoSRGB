@@ -1192,11 +1192,13 @@ input[type='range']:active::-webkit-slider-thumb {
  * Sequence frame strip
  * ------------------------------------------------------------------------ */
 
+/* The 14px matches .viewer below it, so the strip lines up with the exposure
+   and gamma rows instead of running to the panel border. */
 .frames {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 0 2px;
+  padding: 6px 14px 2px;
 }
 
 .frames input[type='range'] {
@@ -1213,16 +1215,14 @@ input[type='range']:active::-webkit-slider-thumb {
 }
 
 /*
- * The counter is the last thing on the row, so without this its glyphs sit
- * exactly on the panel's content edge and read as clipped against the border.
  * The width is set from the frame count in syncFrames() rather than guessed
  * here - a fixed min-width either wastes space on a 12-frame run or is still
  * too small for a 4-digit one, and letting it size to content makes the slider
- * jump every time the number gains a digit.
+ * jump every time the number gains a digit. The inset from the panel edge is
+ * the row's padding, not this element's, so it matches the rows below.
  */
 .fr-count {
   flex: none;
-  padding-right: 2px;
   min-width: var(--fr-count-w, 9ch);
   text-align: right;
   font-family: var(--font-mono);

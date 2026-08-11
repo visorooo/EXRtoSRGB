@@ -307,10 +307,10 @@ function syncFrames(r) {
   state.frame = r.frame;
   // Reserve the width of the widest label this run can produce - "150 / 150"
   // is wider than "1 / 150", and resizing on every step shifts the slider.
-  // +4px for the padding, which min-width includes under border-box; without
-  // it the box still grew a couple of pixels on the last frame.
+  // Widest label this run can produce: "150 / 150" is wider than "1 / 150",
+  // and resizing on every step would shift the slider under the cursor.
   $('fr-count').style.setProperty(
-    '--fr-count-w', `calc(${String(n).length * 2 + 3}ch + 4px)`);
+    '--fr-count-w', `${String(n).length * 2 + 3}ch`);
   $('fr-count').textContent = `${r.frame + 1} / ${n}`;
   $('fr-prev').disabled = r.frame <= 0;
   $('fr-next').disabled = r.frame >= n - 1;
