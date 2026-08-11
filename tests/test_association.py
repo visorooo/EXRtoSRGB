@@ -120,6 +120,51 @@ def test_a_foreign_user_choice_is_still_cleared(monkeypatch):
     assert any("UserChoice" in c for c in calls)
 
 
+@windows_only
+def test_a_class_claim_that_does_not_take_is_withdrawn(monkeypatch, tmp_path):
+    """
+    Claiming .exr without winning it is worse than not claiming it.
+
+    Windows 11 Settings reads that key to decide what to show as the current
+    default. A claim Explorer ignores makes Settings display this app and grey
+    out "Set default" - so the user cannot fix an association the app broke.
+    `set_association` therefore checks with the shell and withdraws the claim
+    when it did not take.
+
+    Nothing real is written: the whole winreg surface is faked, because a test
+    that registers for .exr would change the machine it runs on.
+    """
+    import contextlib
+    import winreg
+    writes = []
+
+    class FakeKey:
+        pass
+
+    @contextlib.contextmanager
+    def fake_create(hive, path):
+        yield FakeKey()
+
+    monkeypatch.setattr(winreg, "CreateKey", fake_create)
+    monkeypatch.setattr(winreg, "OpenKey", fake_create)
+    monkeypatch.setattr(winreg, "SetValueEx",
+                        lambda key, name, res, kind, value:
+                        writes.append((name, value)))
+    monkeypatch.setattr(winreg, "QueryValueEx", lambda *a: ("", 0))
+    monkeypatch.setattr(winreg, "DeleteValue", lambda *a: None)
+    monkeypatch.setattr(winreg, "DeleteKey", lambda *a: None)
+    monkeypatch.setattr(app, "_persistent_icon", lambda name: "icon")
+    monkeypatch.setattr(app, "refresh_shell", lambda: None)
+    monkeypatch.setattr(app, "_clear_user_choice", lambda: [])
+    # pretend the shell keeps naming someone else, whatever we write
+    monkeypatch.setattr(app, "effective_handler",
+                        lambda: r"C:\Program Files\Adobe\Photoshop.exe")
+
+    app.set_association(True)
+    claims = [v for n, v in writes if n == "" and v in (app.PROG_ID, "")]
+    assert claims[-1] == "", "the claim must be withdrawn, not left behind"
+
+
 def test_register_flags_select_parts():
     """
     The installer's two checkboxes have to be independent.
