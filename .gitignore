@@ -10,7 +10,9 @@ venv/
 # repo root so it is easy to find; PyInstaller's scratch goes to %TEMP%.
 # Wildcarded because the filename carries the version, so each build is a new
 # name and an exact rule would start letting old ones through.
-/EXRtoSRGB*.exe
+/EXRtoSRGB.exe
+/EXRtoSRGB_Setup_*.exe
+version.ini
 build/
 dist/
 *.manifest

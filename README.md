@@ -19,7 +19,7 @@ destination is a comp rather than a screen.
   <img src="https://img.shields.io/badge/⬇%20Download%20for%20Windows-latest%20release-1f20f1?style=for-the-badge&labelColor=1f20f1&color=2b2cf5" alt="Download the latest release" height="46">
 </a>
 
-**One file. Nothing to install.** · [All releases](../../releases)
+**Installs in seconds. No admin needed.** · [All releases](../../releases)
 
 <br>
 
@@ -64,6 +64,7 @@ checked frame-for-frame against Nuke conversions of the same renders.
 | **Sequences** | Drop one frame, get the run. Step through frames next to the preview. |
 | **Right-click convert** | Five presets in Explorer, no window opened. |
 | **Command line** | `--cli` for a farm, a build step, or a shell loop. |
+| **Tells you about updates** | Checks GitHub on launch and shows a pill in the title bar when there's a newer release. |
 
 ---
 
@@ -71,13 +72,23 @@ checked frame-for-frame against Nuke conversions of the same renders.
 
 ### [⬇ Download the latest release](../../releases/latest)
 
-One file — `EXRtoSRGB_v3.0.4.exe` or whatever the current version is. The version
-is in the filename, so a copy sitting in a downloads folder still says what it is.
-Run it. That's the whole installation.
+Run `EXRtoSRGB_Setup_v<version>.exe`. It installs like any other application:
 
-Self-contained — the OpenImageIO / OpenColorIO libraries and every ACES config are
-compiled in. Nothing to install, no config file to place, no runtime to match.
-Windows supplies the webview, so there's no bundled browser either.
+- **No admin prompt.** Installs per-user to `%LOCALAPPDATA%\Programs\EXRtoSRGB`,
+  the same as VS Code or Discord. Nothing is changed for other accounts.
+- **Appears in Add/Remove Programs**, with a Start menu entry and a working
+  uninstaller that takes the file association and right-click menu with it.
+- **Offers to open `.exr` files** and to add the right-click convert menu, both
+  ticked by default and both changeable later under the **⚙**.
+- **Upgrades in place.** The app lives at a fixed path, so the association keeps
+  working across versions.
+
+The app itself is self-contained — OpenImageIO, OpenColorIO and every ACES config
+are compiled in. Windows supplies the webview, so there's no bundled browser.
+
+> The installer is unsigned, so Windows SmartScreen shows a warning the first time.
+> **More info → Run anyway.** Code signing is a paid annual certificate rather than
+> anything that can be fixed in the source.
 
 There's a sample render in [`docs/sample_render.exr`](docs/sample_render.exr) if you
 want something to drop on it straight away — the frame in the screenshots above.
@@ -237,9 +248,9 @@ and unticking hands the file type back.
 `.exr` files also get their own aperture icon, distinct from the app's, so a file and
 the app that opens it don't look identical in Explorer.
 
-> After upgrading, open the app once and it re-points the association at the new
-> build by itself. If Windows is still opening `.exr` with something else, tick the
-> toggle — that clears the default Windows recorded when an app was picked by hand.
+> If Windows is opening `.exr` with something else, tick the toggle once — that
+> clears the default Windows recorded when an app was picked by hand in "Open
+> with", which otherwise silently outranks this.
 
 The window opens **centred and sized to the image**, up to 1:1, capped to your screen.
 Move or resize it and that's remembered.
@@ -332,7 +343,7 @@ near-black smear.
 ## Command line
 
 ```bash
-EXRtoSRGB_v3.0.4.exe --cli shots/ --format png --bits 16 --out out/
+EXRtoSRGB.exe --cli shots/ --format png --bits 16 --out out/
 ```
 
 | Flag | |

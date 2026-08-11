@@ -41,6 +41,12 @@
           drifting to the far side of the bar away from what it describes.
         -->
         <span class="sub" id="version"></span>
+        <!--
+          Only ever shown when there is genuinely a newer release. A control
+          that is always there, greyed, saying "up to date" is noise on every
+          launch for the one launch where it matters.
+        -->
+        <button class="update-pill" id="update-pill" hidden></button>
         <span class="spacer"></span>
         <!--
           Windows integration lives behind this rather than in Output settings:

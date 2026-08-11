@@ -20,6 +20,7 @@ Build a standalone .exe on Windows:
 """
 
 import os
+import re
 import sys
 import threading
 import traceback
@@ -30,7 +31,7 @@ from webview.dom import DOMEventHandler
 import core
 
 APP_NAME = "EXR → sRGB"
-VERSION = "3.0.5"
+VERSION = "3.1.0"
 
 # _MEIPASS only exists in a frozen build; from source this is the repo folder.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -219,6 +220,66 @@ def focus_existing_instance():
     u32.ShowWindow(hwnd, SW_RESTORE)
     u32.SetForegroundWindow(hwnd)
     return True
+
+
+# ----------------------------------------------------------------------------
+# Update check
+#
+# Asks GitHub what the latest release is. Deliberately small: no auto-download
+# on launch, no telemetry, one unauthenticated request to a public endpoint, and
+# every failure is silent - an offline machine or a rate-limited IP must never
+# produce an error the user has to dismiss to use a converter.
+# ----------------------------------------------------------------------------
+
+RELEASES_API = "https://api.github.com/repos/visorooo/EXRtoSRGB/releases/latest"
+RELEASES_PAGE = "https://github.com/visorooo/EXRtoSRGB/releases/latest"
+
+
+def _version_tuple(text):
+    """'v3.0.5' -> (3, 0, 5). Missing parts are zero, so 3.1 sorts under 3.1.0."""
+    parts = re.findall(r"\d+", str(text or ""))
+    nums = [int(p) for p in parts[:4]] or [0]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)
+
+
+def check_for_update(timeout=6.0):
+    """
+    Return {'available', 'latest', 'current', 'url', 'asset'} or None.
+
+    None means "could not tell" - offline, rate-limited, GitHub down. That is
+    reported as nothing rather than as a problem, because a failed update check
+    is not a thing the user did wrong.
+    """
+    import json as _json
+    import urllib.request
+    req = urllib.request.Request(
+        RELEASES_API,
+        headers={"Accept": "application/vnd.github+json",
+                 # GitHub rejects requests with no User-Agent.
+                 "User-Agent": "EXRtoSRGB/%s" % VERSION})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = _json.loads(r.read().decode("utf-8"))
+    except Exception:                               # noqa: BLE001
+        return None
+    tag = data.get("tag_name") or ""
+    if not tag:
+        return None
+    asset = ""
+    for a in data.get("assets") or []:
+        name = a.get("name") or ""
+        if name.lower().endswith(".exe"):
+            asset = a.get("browser_download_url") or ""
+            break
+    return {
+        "available": _version_tuple(tag) > _version_tuple(VERSION),
+        "latest": tag.lstrip("vV"),
+        "current": VERSION,
+        "url": data.get("html_url") or RELEASES_PAGE,
+        "asset": asset,
+    }
 
 
 def refresh_shell():
@@ -1065,6 +1126,35 @@ class Api:
             save_prefs({"theme": theme})
         return True
 
+    def check_update(self):
+        """
+        Ask GitHub whether there is a newer release.
+
+        Runs on a bridge worker thread, so a slow or unreachable network delays
+        nothing the user is looking at. Returns {} when it cannot tell, and the
+        UI shows nothing in that case - a failed update check is not news.
+        """
+        result = check_for_update()
+        return result or {}
+
+    def open_url(self, url):
+        """
+        Open a link in the real browser.
+
+        The UI is a file:// page, so target="_blank" opens nothing; the shell has
+        to be asked from this side. Only ever called with the release URL that
+        came back from the update check.
+        """
+        url = str(url or "")
+        if not url.startswith("https://github.com/visorooo/EXRtoSRGB"):
+            return False
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return True
+        except Exception:                           # noqa: BLE001
+            return False
+
     def copy_text(self, text):
         """
         Put text on the clipboard from Python - file:// blocks the JS API.
@@ -1599,6 +1689,69 @@ def attach_dnd(window, api):
 
 def main():
     argv = sys.argv[1:]
+
+    # `--register` / `--unregister`: what an installer calls, so the shell
+    # integration has exactly one implementation rather than a second copy
+    # written in the installer's own scripting language that then drifts.
+    # Both are per-user by design, so the installer must invoke them as the
+    # signed-in user rather than elevated - registering as the admin account
+    # would associate .exr for the wrong person.
+    # `--diag`: what the app thinks it is and where it thinks it lives. Exists
+    # because a shell-integration bug looks identical from outside whether the
+    # cause is the path, the hive or the permissions.
+    if "--diag" in argv:
+        import winreg
+        print("version    : %s" % VERSION)
+        print("frozen     : %s" % bool(getattr(sys, "frozen", False)))
+        print("executable : %s" % sys.executable)
+        print("base dir   : %s" % BASE_DIR)
+        print("command    : %s" % _exe_command())
+        print("prefs      : %s" % prefs_path())
+        try:
+            print("icon copy  : %s" % _persistent_icon("exr.ico"))
+        except Exception as e:                      # noqa: BLE001
+            print("icon copy  : FAILED %r" % e)
+        print("handler    : %s" % (association_state(),))
+        print("userchoice : %s" % _user_choice())
+        for label, path, value in (
+                ("progid", r"Software\Classes\%s" % PROG_ID, ""),
+                ("command", r"Software\Classes\%s\shell\open\command" % PROG_ID, ""),
+                # The submenu key carries MUIVerb and has no default value, so
+                # asking for the default reports it missing when it is fine.
+                ("verbs", CONTEXT_KEY, "MUIVerb")):
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as k:
+                    print("%-10s : %r" % (label, winreg.QueryValueEx(k, value)[0]))
+            except OSError as e:
+                print("%-10s : <%s>" % (label, e.__class__.__name__))
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                CONTEXT_KEY + r"\shell\01png\command") as k:
+                print("first verb : %r" % winreg.QueryValueEx(k, "")[0])
+        except OSError as e:
+            print("first verb : <%s>" % e.__class__.__name__)
+        return sys.exit(0)
+
+    if "--register" in argv or "--unregister" in argv:
+        on = "--register" in argv
+        word = "registered" if on else "unregistered"
+        failures = []
+        # Reported separately. They are independent registrations, and folding
+        # both into one try meant a failure in either was indistinguishable -
+        # the association updated, the verbs silently did not, and the command
+        # still said "registered".
+        for name, fn in (("association", set_association),
+                         ("context menu", set_context_menu)):
+            try:
+                fn(on)
+                print("  %s %s" % (word, name))
+            except Exception as e:                  # noqa: BLE001
+                failures.append("%s: %s" % (name, e))
+                print("  FAILED %s: %s" % (name, e), file=sys.stderr)
+        if failures:
+            return sys.exit(1)
+        print("%s .exr for %s" % (word, os.environ.get("USERNAME", "this user")))
+        return sys.exit(0)
 
     # `--cli ...`: the scriptable entry point. First, and before the single
     # instance guard, because a farm may run several at once and none of them

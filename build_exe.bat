@@ -1,16 +1,15 @@
 @echo off
 REM ============================================================
-REM  Build EXRtoSRGB_v<version>.exe  (run on Windows, in this folder)
+REM  Build EXRtoSRGB.exe  (run on Windows, in this folder)
 REM
 REM  The exe lands next to this script rather than in dist\, so it is
-REM  the first thing you see in the folder. The version is part of the
-REM  filename so a downloaded copy says what it is without being run.
+REM  the first thing you see in the folder.
 REM
-REM  EXRtoSRGB.spec owns the name - it reads VERSION out of exr2srgb.py.
-REM  This script deliberately does NOT work the name out for itself:
-REM  doing that in cmd needs a python one-liner inside a for /f, and the
-REM  parentheses in it break cmd's parser. One source of truth, and the
-REM  filename is discovered afterwards instead.
+REM  The name is deliberately stable and carries no version: Windows
+REM  records this path in the .exr association, so a filename that
+REM  changed every release broke the double-click on every upgrade.
+REM  The version lives in the installer's filename instead - see
+REM  build_installer.py.
 REM ============================================================
 
 REM 1) install dependencies
@@ -48,16 +47,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-dir /b EXRtoSRGB_v*.exe >nul 2>&1
-if errorlevel 1 (
+if not exist "EXRtoSRGB.exe" (
     echo.
-    echo BUILD FAILED - PyInstaller reported success but no versioned exe
-    echo is here. Check that VERSION in exr2srgb.py is readable.
+    echo BUILD FAILED - PyInstaller reported success but EXRtoSRGB.exe
+    echo is not here.
     pause
     exit /b 1
 )
 
 echo.
-echo Done.  Built:
-for %%f in (EXRtoSRGB_v*.exe) do echo    %%f
+echo Done.  EXRtoSRGB.exe is in this folder.
+echo Next:  python build_installer.py
 pause

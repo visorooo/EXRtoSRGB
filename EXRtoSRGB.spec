@@ -16,13 +16,12 @@ alongside the exe.
 """
 from PyInstaller.utils.hooks import collect_all
 
-# The version goes in the filename, so a downloaded exe says what it is without
-# being launched. Read from the source rather than repeated here - two places to
-# update is one place to forget.
-import re
-with open('exr2srgb.py', encoding='utf-8') as fh:
-    VERSION = re.search(r'^VERSION\s*=\s*"([^"]+)"', fh.read(), re.M).group(1)
-EXE_NAME = 'EXRtoSRGB_v%s' % VERSION
+# A stable name at a stable path. The installer's filename carries the version,
+# and so do the file properties and Add/Remove Programs - but the exe Windows
+# records in the .exr association must not move between releases, or every
+# upgrade breaks the double-click. That is exactly what the versioned filename
+# did in 3.0.4.
+EXE_NAME = 'EXRtoSRGB'
 
 datas = [('ui', 'ui'), ('app.ico', '.'), ('exr.ico', '.')]
 binaries = []

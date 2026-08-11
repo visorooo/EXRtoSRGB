@@ -523,6 +523,41 @@ associated. The symptom is a bright fringe on antialiased edges, visible only on
 partial-alpha pixels, which is easy to mistake for a broken alpha channel. The
 `unpremulted` flag in `apply_transform` is what keeps the pair honest.
 
+## Installing
+
+`installer.iss` (Inno Setup) + `build_installer.py`. Build with
+`python build_installer.py` after `build_exe.bat`; the Python wrapper exists
+because reading VERSION and locating ISCC in cmd is how the last build script
+broke - a Python one-liner inside a `for /f` dies on its own parentheses.
+
+**Per-user, `PrivilegesRequired=lowest`.** Everything the app registers lives in
+`HKCU`, so a machine-wide install would need elevation to place files and then
+have to drop back to the signed-in user to register anything. `%LOCALAPPDATA%
+\Programs\EXRtoSRGB` means no UAC at all, and it still appears in Add/Remove
+Programs.
+
+**The installed exe has a stable name at a fixed path.** Windows records that path
+in the association, so a versioned filename broke the double-click on every
+upgrade - which is exactly what 3.0.4 did. The version lives in the installer's
+filename, the uninstall entry and the file properties.
+
+**The installer calls `EXRtoSRGB.exe --register`** rather than writing the keys
+itself, so there is one implementation instead of a second copy in Pascal that
+drifts. `--unregister` runs from `[UninstallRun]` *before* the exe is deleted -
+afterwards there is nothing left to run. Neither is elevated, so both land in the
+right hive.
+
+**Beware testing registry writes from a sandboxed shell.** The Bash tool and
+PowerShell here see *different* HKCU views: writes made through one are invisible
+to the other. That produced a long false trail - the association appearing not to
+save, verbs appearing stale, the Add/Remove entry appearing absent - none of which
+was real. Verify shell integration through PowerShell, or from the app itself with
+`--diag`.
+
+**`--diag`** prints what the app thinks it is: frozen or not, its own path, the
+command it would register, and what is actually in the registry. Worth reaching for
+first, because every shell-integration bug looks identical from outside.
+
 ## Release
 
 **The exe carries its version in the filename** — `EXRtoSRGB_v3.0.4.exe`. The spec

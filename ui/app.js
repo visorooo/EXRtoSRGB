@@ -1260,6 +1260,31 @@ function setTheme(theme) {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Update check
+ *
+ * Asks once at startup, on the bridge's worker thread, and shows nothing unless
+ * there is genuinely a newer release. Any failure - offline, rate limited - is
+ * silence: a converter that cannot reach GitHub still converts.
+ * ------------------------------------------------------------------------ */
+
+async function wireUpdateCheck() {
+  const pill = $('update-pill');
+  if (!pill) return;
+  let info = null;
+  try {
+    info = await window.pywebview.api.check_update();
+  } catch (err) {
+    return;
+  }
+  if (!info || !info.available) return;
+  pill.textContent = `v${info.latest} available`;
+  pill.title = `You have v${info.current}. Click to open the release page.`;
+  pill.hidden = false;
+  pill.onclick = () => window.pywebview.api.open_url(info.url);
+  log(`Version ${info.latest} is available — you have ${info.current}.`, 'dim');
+}
+
 function applyDefaults() {
   setValue($('look'), 'tone');
   setValue($('format'), 'png');
@@ -1407,6 +1432,7 @@ window.addEventListener('pywebviewready', async () => {
   await reloadConfigList(init.config);
 
   await wirePresets();
+  wireUpdateCheck();
 
   const assoc = await window.pywebview.api.association();
   if (assoc.supported) {

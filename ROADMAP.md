@@ -278,7 +278,28 @@ found by looking:
   toggle reads it first now and clears it, and the registration repairs its own
   path at startup so a versioned filename stops breaking on upgrade.
 
-## V3.1
+## Shipped — v3.1
+
+**An installer.** The app used to ship as a bare exe, and someone deleted theirs
+after using it because it looked like something already installed. It now installs
+per-user to `%LOCALAPPDATA%\Programs\EXRtoSRGB` with no admin prompt, appears in
+Add/Remove Programs with a working uninstaller, and offers the `.exr` association
+and the right-click menu as ticked-by-default choices during setup.
+
+That also settles the versioned-filename problem for good: the installed exe sits
+at a fixed path, so the association survives upgrades instead of needing the
+startup repair added in 3.0.5. The version moved to the installer's filename.
+
+**`--register` / `--unregister`**, so the installer calls the app rather than
+carrying a second copy of the registry writes in Pascal. **`--diag`** prints what
+the app thinks it is and what is actually registered, because every shell
+integration bug looks the same from outside.
+
+**An update check.** Asks GitHub on launch and shows a pill in the title bar only
+when there is genuinely something newer. Silent on failure - a converter that
+cannot reach GitHub still converts.
+
+## V3.2
 
 Nothing here is a bug — v3.0 does what it set out to do. These are the four things
 that would make it better, in the order I would take them.
@@ -597,13 +618,13 @@ anyone else can run it. Largest item here and gated on hardware.
 ## Known limitations
 
 - Explorer shows the `.exr` file icon, not the image. A real thumbnail needs a
-  native `IThumbnailProvider` DLL — see V3.1 item 1.
+  native `IThumbnailProvider` DLL — see V3.2 item 1.
 - There is no hotkey preview. The app has to be running to catch one, which needs a
-  resident tray mode — see V3.1 item 2.
+  resident tray mode — see V3.2 item 2.
 - The layer dropdown applies one choice to the batch, falling back to auto-detect
   per file. Mixed batches would want a choice remembered per entry.
 - Sequence frames step rather than play; smooth playback needs a pre-rendered
-  cache — see V3.1 item 4.
+  cache — see V3.2 item 4.
 - The exe is unsigned, so SmartScreen warns on first run. A code-signing
   certificate is the only fix, and it is an annual cost rather than a code change.
 - Windows only. `core.py` is portable, but every piece of shell integration is not
