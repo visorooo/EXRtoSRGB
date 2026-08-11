@@ -50,6 +50,12 @@
       <!-- wheel to zoom, drag to pan -->
       <div class="vstage" id="vstage">
         <img id="vimg" alt="" draggable="false" />
+        <!--
+          Past 1:1 the base render is being upscaled, so this overlays the
+          visible region re-rendered at source resolution. Hidden whenever it
+          would be stale, which is any time the view is moving.
+        -->
+        <img id="vcrop" class="vcrop" alt="" draggable="false" hidden />
         <div class="vloading" id="vloading">Loading…</div>
       </div>
 
@@ -66,9 +72,6 @@
 
         <button class="ghost" id="vreset" title="Reset exposure and gamma">Reset</button>
         <span class="spacer"></span>
-        <!-- click to copy the hex; the chip is the colour under the cursor -->
-        <button class="swatch" id="vswatch" hidden
-                title="Click to copy the hex"></button>
         <!-- holds one reading still, so it can be read off and pasted -->
         <button class="icon eyedrop" id="vpick" aria-pressed="false"
                 title="Eyedropper — click a pixel to lock and copy it (E)"
@@ -81,6 +84,9 @@
             <path d="m2.3 12.7.8-.8" />
           </svg>
         </button>
+        <!-- click to copy the hex; the chip is the colour under the cursor -->
+        <button class="swatch" id="vswatch" hidden
+                title="Click to copy the hex"></button>
         <span class="vprobe" id="vprobe"></span>
         <button class="ghost" id="vkeys" title="Keyboard shortcuts (?)">?</button>
         <span class="vzoom" id="vzoom">100%</span>

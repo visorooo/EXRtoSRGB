@@ -358,10 +358,7 @@
                 colour after exposure, gamma and the view transform.
               -->
               <div class="probe-row">
-                <button class="swatch" id="pv-swatch" hidden
-                        title="Click to copy the hex"></button>
-                <span class="probe-hex" id="pv-hex"></span>
-                <span class="spacer"></span>
+                <!-- the tool comes before the thing it fills in -->
                 <button class="icon eyedrop" id="pv-pick" aria-pressed="false"
                         title="Eyedropper — click a pixel to lock and copy it (E)"
                         aria-label="Eyedropper">
@@ -373,6 +370,10 @@
                     <path d="m2.3 12.7.8-.8" />
                   </svg>
                 </button>
+                <button class="swatch" id="pv-swatch" hidden
+                        title="Click to copy the hex"></button>
+                <span class="probe-hex" id="pv-hex"></span>
+                <span class="spacer"></span>
               </div>
               <div class="probe" id="probe">Hover the image for pixel values</div>
             </div>

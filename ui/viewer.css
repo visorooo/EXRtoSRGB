@@ -94,6 +94,17 @@
   image-rendering: auto;
 }
 
+/* The full-resolution overlay. Sits exactly on top of the region it replaces,
+   so there is no crossfade and nothing to line up by eye. */
+.vcrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
 .vloading {
   position: absolute;
   inset: auto;

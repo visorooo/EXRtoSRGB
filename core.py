@@ -1069,8 +1069,25 @@ class ViewerSession:
             self._scaled[factor] = (rgb, alpha)
         return self._scaled[factor]
 
+    def _crop(self, box):
+        """
+        A region of the full-resolution layer, clamped to the image.
+
+        Deliberately not cached: crops follow the viewport, so every pan would
+        add another entry and the cache would grow without bound. The slice is a
+        view rather than a copy, and `render` copies before touching it anyway.
+        """
+        x, y, w, h = (int(v) for v in box)
+        x = max(0, min(x, self._W - 1))
+        y = max(0, min(y, self._H - 1))
+        w = max(1, min(w, self._W - x))
+        h = max(1, min(h, self._H - y))
+        rgb = self._rgb[y:y + h, x:x + w]
+        alpha = self._alpha[y:y + h, x:x + w] if self._alpha is not None else None
+        return rgb, alpha
+
     def render(self, settings, exposure=0.0, gamma=1.0, channel="rgb",
-               max_px=1024):
+               max_px=1024, crop=None):
         """
         Apply exposure, the display transform and gamma, and return a data URI.
 
@@ -1078,11 +1095,19 @@ class ViewerSession:
         it behave like a camera stop rather than a brightness slider. Gamma is
         applied after, on display values, matching how a compositor's viewer
         gamma works.
+
+        `crop` is `(x, y, w, h)` in source pixels. Given one, the region is taken
+        from the full-resolution layer and no downsampling happens at all - which
+        is the only way zooming past 1:1 shows real pixels rather than an
+        upscaled preview. Without it the whole image is scaled to `max_px`.
         """
         if self._rgb is None:
             raise RuntimeError("nothing loaded")
 
-        rgb, alpha = self._at_size(max_px)
+        if crop is not None:
+            rgb, alpha = self._crop(crop)
+        else:
+            rgb, alpha = self._at_size(max_px)
         h, w = rgb.shape[:2]
 
         # apply_transform writes in place, so the cached copy must not be handed

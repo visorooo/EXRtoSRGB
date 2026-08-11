@@ -53,13 +53,86 @@ const V = {
  * Transform
  * ------------------------------------------------------------------------ */
 
+/* Screen pixels per source pixel. 1.0 is true 1:1 against the original. */
+function sourceScale() {
+  return V.zoom * (V.imgW / (V.fullW || V.imgW));
+}
+
 function applyTransform() {
   const img = $('vimg');
   img.style.transform =
     `translate(${V.x}px, ${V.y}px) scale(${V.zoom})`;
   // Below 1:1 the browser's smooth scaling is right; above it, show the pixels.
-  img.classList.toggle('smooth', V.zoom * (V.imgW / (V.fullW || V.imgW)) < 1);
-  $('vzoom').textContent = Math.round(V.zoom * (V.imgW / (V.fullW || V.imgW)) * 100) + '%';
+  img.classList.toggle('smooth', sourceScale() < 1);
+  $('vzoom').textContent = Math.round(sourceScale() * 100) + '%';
+  // Any movement invalidates the overlay before the new one arrives; leaving a
+  // stale crop on screen would be worse than the upscale it replaces.
+  hideCrop();
+  scheduleCrop();
+}
+
+/* ---------------------------------------------------------------------------
+ * Full-resolution overlay
+ *
+ * The base render is a fixed 1600px scaled by CSS - sharp to 1:1, interpolated
+ * beyond it. So a 4K plate at 200% was showing invented pixels, with
+ * `image-rendering: pixelated` making them look like real ones, which is the
+ * worst of both. Past 1:1 the visible region is re-rendered at source
+ * resolution and laid exactly over the top.
+ *
+ * The request is bounded by the stage rather than the image: at scale >= 1 the
+ * visible region is at most the stage's own size in source pixels, so a 16K
+ * plate costs no more than a 2K one.
+ * ------------------------------------------------------------------------ */
+
+let cropTimer = null;
+let cropToken = 0;
+
+function hideCrop() {
+  const c = $('vcrop');
+  if (c) c.hidden = true;
+}
+
+function scheduleCrop() {
+  clearTimeout(cropTimer);
+  cropTimer = setTimeout(renderCrop, 140);
+}
+
+async function renderCrop() {
+  const c = $('vcrop');
+  const img = $('vimg');
+  if (!c || !img || !img.src || !V.fullW) return;
+  const scale = sourceScale();
+  /*
+   * The test is whether the *render* is being magnified, not whether we are
+   * past 1:1 against the source. Those are different numbers: a 2400px image
+   * renders at 1200px, so at "100%" the base is already stretched 2x and shows
+   * interpolated pixels. Keying off 1:1 would skip the overlay precisely where
+   * it is most needed - on the large plates it exists for.
+   */
+  if (V.zoom <= 1.01 || V.fullW <= V.imgW) return;
+
+  const stage = $('vstage').getBoundingClientRect();
+  // Visible rectangle, in source pixels.
+  const sx = Math.floor(Math.max(0, -V.x / scale));
+  const sy = Math.floor(Math.max(0, -V.y / scale));
+  const sw = Math.ceil(Math.min(V.fullW - sx, stage.width / scale) + 2);
+  const sh = Math.ceil(Math.min(V.fullH - sy, stage.height / scale) + 2);
+  if (sw < 2 || sh < 2) return;
+
+  const token = ++cropToken;
+  const r = await window.pywebview.api.render_crop(
+    sx, sy, sw, sh, V.exposure, V.gamma, V.channel);
+  // A newer view won, or the user moved while this was in flight.
+  if (token !== cropToken || !r || r.error) return;
+  if (Math.abs(sourceScale() - scale) > 0.001) return;
+
+  c.src = r.uri;
+  c.style.width = r.width * scale + 'px';
+  c.style.height = r.height * scale + 'px';
+  c.style.transform =
+    `translate(${V.x + r.x * scale}px, ${V.y + r.y * scale}px)`;
+  c.hidden = false;
 }
 
 function fit() {

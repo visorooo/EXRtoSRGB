@@ -583,6 +583,25 @@ class ViewerApi:
         except Exception as e:
             return {"error": str(e)}
 
+    def render_crop(self, x, y, w, h, exposure=0.0, gamma=1.0, channel="rgb"):
+        """
+        Re-render one region at source resolution, for zooming past 1:1.
+
+        The base render is a fixed 1600px scaled by CSS, which is sharp enough
+        up to 1:1 and interpolated beyond it - so on a 4K plate at 200% the
+        viewer was showing invented pixels while `image-rendering: pixelated`
+        made them look authoritative. This returns the real ones for the region
+        actually on screen.
+        """
+        try:
+            uri, rw, rh = self._session.render(
+                self._settings(), exposure=float(exposure), gamma=float(gamma),
+                channel=str(channel), crop=(x, y, w, h))
+            return {"uri": uri, "width": rw, "height": rh,
+                    "x": int(x), "y": int(y)}
+        except Exception as e:
+            return {"error": str(e)}
+
     def probe(self, u, v, exposure=0.0, gamma=1.0):
         try:
             return self._session.sample(float(u), float(v), self._settings(),

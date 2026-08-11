@@ -1003,6 +1003,60 @@ def test_probe_hex_follows_exposure(tmp_path):
     assert up["r"] == base["r"], "the linear value is the pixel and must not move"
 
 
+def test_crop_render_is_source_resolution(tmp_path):
+    """
+    A crop must come off the full-resolution layer, not the scaled preview.
+
+    This is what makes zooming honest: the base render is capped, so on any
+    image larger than that cap even "100%" is showing interpolated pixels.
+    """
+    src = _hdr_rgba(tmp_path, w=400, h=300, value=0.18)
+    v = core.ViewerSession()
+    v.load(src)
+    uri, w, h = v.render(settings(tmp_path), max_px=100, crop=(10, 20, 64, 48))
+    assert (w, h) == (64, 48), "crop must not be downsampled"
+    assert _decode(uri).shape[:2] == (48, 64)
+
+
+def test_crop_is_clamped_to_the_image(tmp_path):
+    """A crop running off the edge is normal while panning; it must not throw."""
+    src = _hdr_rgba(tmp_path, w=64, h=64)
+    v = core.ViewerSession()
+    v.load(src)
+    _, w, h = v.render(settings(tmp_path), crop=(40, 40, 500, 500))
+    assert (w, h) == (24, 24)
+    _, w, h = v.render(settings(tmp_path), crop=(-50, -50, 10, 10))
+    assert w >= 1 and h >= 1
+
+
+def test_crop_matches_the_same_region_of_the_full_render(tmp_path):
+    """
+    The crop path and the whole-image path must agree pixel for pixel.
+
+    Two routes through the transform is exactly the shape of thing that drifts:
+    a different clamp or a missed gamma would show up only when zoomed in.
+    """
+    src = _hdr_rgba(tmp_path, w=128, h=96, value=0.18)
+    v = core.ViewerSession()
+    v.load(src)
+    s = settings(tmp_path)
+    whole = _decode(v.render(s, max_px=1000, exposure=1.5, gamma=1.3)[0])
+    part = _decode(v.render(s, exposure=1.5, gamma=1.3, crop=(30, 20, 40, 30))[0])
+    assert np.array_equal(part[..., :3], whole[20:50, 30:70, :3])
+
+
+def test_crop_does_not_mutate_the_cached_layer(tmp_path):
+    """The crop slices a view; rendering it must not write through."""
+    src = _hdr_rgba(tmp_path, w=64, h=64, value=0.18)
+    v = core.ViewerSession()
+    v.load(src)
+    s = settings(tmp_path)
+    first = _decode(v.render(s, crop=(0, 0, 32, 32))[0])
+    v.render(s, exposure=3.0, crop=(0, 0, 32, 32))
+    again = _decode(v.render(s, crop=(0, 0, 32, 32))[0])
+    assert np.array_equal(first, again)
+
+
 def test_probe_without_settings_has_no_hex(tmp_path):
     v = core.ViewerSession()
     v.load(_hdr_rgba(tmp_path))

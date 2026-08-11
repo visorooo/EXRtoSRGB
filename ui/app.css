@@ -1212,8 +1212,19 @@ input[type='range']:active::-webkit-slider-thumb {
   line-height: 1;
 }
 
+/*
+ * The counter is the last thing on the row, so without this its glyphs sit
+ * exactly on the panel's content edge and read as clipped against the border.
+ * The width is set from the frame count in syncFrames() rather than guessed
+ * here - a fixed min-width either wastes space on a 12-frame run or is still
+ * too small for a 4-digit one, and letting it size to content makes the slider
+ * jump every time the number gains a digit.
+ */
 .fr-count {
   flex: none;
+  padding-right: 2px;
+  min-width: var(--fr-count-w, 9ch);
+  text-align: right;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--ink-faint);
