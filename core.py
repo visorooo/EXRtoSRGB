@@ -154,6 +154,14 @@ _COMPONENT_ALIASES = {
     "g": "g", "green": "g",
     "b": "b", "blue": "b",
     "a": "a", "alpha": "a",
+    # X/Y/Z, kept distinct rather than folded into anything. Blender writes
+    # Normal and Position as an X,Y,Z triple and Mist and Denoising Depth as a
+    # lone Z, while Octane writes ambient occlusion and depth as a lone Y - so
+    # the same letter means a vector component in one file and a whole
+    # single-channel pass in another. Only the full set tells them apart, which
+    # is why the decision happens in group_layers and not here.
+    "x": "x", "y": "y", "z": "z",
+    "depth": "z", "luminance": "y",
 }
 
 # Layers that are data, not colour. Running these through an ACES view transform
@@ -189,14 +197,51 @@ def split_channel(name):
 
 
 def group_layers(channelnames):
-    """Group channel names into {layer: {component: index}}, order preserved."""
+    """
+    Group channel names into {layer: {component: index}}, order preserved.
+
+    Three shapes qualify, and telling them apart needs the whole set:
+
+    - **R, G, B** - an ordinary colour layer.
+    - **X, Y, Z** - a vector pass such as Normal or Position, mapped to R, G, B
+      the way a compositor shows it.
+    - **A lone Y or Z** - a single-channel pass, mapped to all three so it reads
+      as greyscale. Octane writes ambient occlusion and depth this way, Blender
+      writes Mist and Denoising Depth this way.
+
+    The same letter therefore means different things in different files: `Z` is
+    a vector component in `Normal.X/.Y/.Z` and a whole depth pass in `Mist.Z`.
+    Requiring R, G and B made real passes invisible in files where everything
+    else read fine, which looks like data loss rather than filtering.
+    """
     layers = {}
     for i, name in enumerate(channelnames):
         layer, comp = split_channel(name)
         if comp is None:
             continue
         layers.setdefault(layer, {}).setdefault(comp, i)
-    return {k: v for k, v in layers.items() if {"r", "g", "b"} <= set(v)}
+
+    out = {}
+    for name, comps in layers.items():
+        have = set(comps)
+        if {"r", "g", "b"} <= have:
+            out[name] = comps
+        elif {"x", "y", "z"} <= have:
+            vec = {"r": comps["x"], "g": comps["y"], "b": comps["z"]}
+            if "a" in comps:
+                vec["a"] = comps["a"]
+            out[name] = vec
+        elif name and len(have - {"a"}) == 1 and (have - {"a"}) <= {"y", "z"}:
+            # Named only. The bare layer scores as "an ordinary image" and would
+            # be auto-picked as the beauty, so a file whose only top-level
+            # channel is Z would silently convert as though it were a render.
+            # Refusing that is the invariant test_no_rgb_raises protects.
+            i = comps[next(iter(have - {"a"}))]
+            mono = {"r": i, "g": i, "b": i}
+            if "a" in comps:
+                mono["a"] = comps["a"]
+            out[name] = mono
+    return out
 
 
 def score_layer(layer):

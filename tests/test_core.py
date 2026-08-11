@@ -196,6 +196,67 @@ def test_no_rgb_raises():
         core.pick_layer(["Z", "CryptoObject00.R", "CryptoObject00.G"])
 
 
+def test_single_channel_named_layers_are_readable():
+    """
+    Octane writes ambient occlusion and depth as one "Y" channel.
+
+    Requiring R, G and B made those two passes invisible in a file where the
+    other forty-seven read fine - and Nuke showed them, so it looked like the
+    app was losing data rather than filtering it.
+    """
+    names = ["R", "G", "B", "Ambient occlusion.Y", "Z-depth.Y"]
+    groups = core.group_layers(names)
+    assert "Ambient occlusion" in groups and "Z-depth" in groups
+    # mapped to all three, so everything downstream sees an ordinary RGB layer
+    ao = groups["Ambient occlusion"]
+    assert ao["r"] == ao["g"] == ao["b"] == names.index("Ambient occlusion.Y")
+
+
+def test_single_channel_layer_reads_as_grey(tmp_path):
+    path = str(tmp_path / "mono.exr")
+    spec = oiio.ImageSpec(4, 4, 4, "float")
+    spec.channelnames = ["R", "G", "B", "Ambient occlusion.Y"]
+    px = np.zeros((4, 4, 4), np.float32)
+    px[..., :3] = 0.18
+    px[..., 3] = 0.42
+    out = oiio.ImageOutput.create(path)
+    out.open(path, spec)
+    out.write_image(px)
+    out.close()
+
+    rgb, alpha, w, h, layer, _ = core.read_layer(path, "Ambient occlusion")
+    assert layer == "Ambient occlusion"
+    assert np.allclose(rgb, 0.42), "should be the Y channel, not the beauty"
+    assert np.array_equal(rgb[..., 0], rgb[..., 2]), "mono must be grey"
+
+
+def test_xyz_vectors_are_three_channels_not_one():
+    """
+    The same letter means different things in different files.
+
+    Blender writes Normal and Position as an X,Y,Z triple and Mist as a lone Z;
+    Octane writes ambient occlusion as a lone Y. Treating Z as luminance would
+    turn a three-channel normal pass into a grey copy of its Z component.
+    """
+    names = ["N.X", "N.Y", "N.Z", "Mist.Z", "AO.Y"]
+    groups = core.group_layers(names)
+    n = groups["N"]
+    assert (n["r"], n["g"], n["b"]) == (0, 1, 2), "vector must keep three channels"
+    assert groups["Mist"]["r"] == groups["Mist"]["b"] == 3, "lone Z is one pass"
+    assert groups["AO"]["r"] == groups["AO"]["b"] == 4, "lone Y is one pass"
+
+
+def test_bare_single_channel_is_still_refused():
+    """
+    A nameless mono layer must not become the beauty.
+
+    The empty layer name scores as an ordinary image, so accepting it would let
+    a depth-only file convert silently as though it were a render.
+    """
+    with pytest.raises(ValueError):
+        core.pick_layer(["Z"])
+
+
 def test_ambiguous_pick_warns():
     names = ["Diffuse_Color.R", "Diffuse_Color.G", "Diffuse_Color.B"]
     _, _, note = core.pick_layer(names)
