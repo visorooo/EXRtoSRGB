@@ -258,45 +258,45 @@ eyedropper that holds a reading still, and every value copies on click.
 
 **Settings and shortcuts** moved behind the cogwheel in the title bar.
 
-## V3
+**Shipped in the 3.0.x patches**, every one reported from real use rather than
+found by looking:
 
-### 1. Viewer, stage two — the GPU path
+- **3.0.1** — the A/B wipe was misplaced at any zoom. `clip-path` resolves in the
+  element's own space *before* its transform, so the seam only agreed with the
+  drawn line at zoom 1 with no pan; at a fitted 2.49x it landed over a thousand
+  pixels away, which put B fully on or fully off. The seam is draggable now.
+- **3.0.2** — copying a value never worked. `set_clipboard` passed a 64-bit
+  `HGLOBAL` to `GlobalLock` with no `argtypes`, so ctypes marshalled it as a C
+  `int` and raised on every call. `OpenClipboard` is retried as well: the clipboard
+  is a single global lock, and anything else holding it failed four copies in
+  eleven. Clicking a value now says "Copied", and only when the write succeeded.
+- **3.0.3** — the version label sits beside the subtitle rather than across the bar.
+- **3.0.4** — the exe carries its version in the filename.
+- **3.0.5** — the `.exr` toggle could appear to do nothing. Windows records a chosen
+  default under `FileExts\.exr\UserChoice`, and Windows 11 a second copy under
+  `UserChoiceLatest`, and that outranks the class registration the app writes. The
+  toggle reads it first now and clears it, and the registration repairs its own
+  path at startup so a versioned filename stops breaking on upgrade.
 
-Stage one shipped (see above): the layer is decoded once and kept, so exposure,
-gamma, channel and layer changes are interactive. What is left is the part that
-makes it feel like [tev](https://github.com/Tom94/tev) rather than a good preview.
+## V3.1
 
-Profiled at 900px on a 2160² 80-channel frame, with decoding already cached:
+Nothing here is a bug — v3.0 does what it set out to do. These are the four things
+that would make it better, in the order I would take them.
 
-| | |
-|---|---|
-| display transform | 40 ms |
-| **PNG encode** | **108 ms** |
+| | | |
+|---|---|---|
+| **Explorer thumbnails** | large | the biggest visible win, and the only item that is not Python |
+| **Ctrl+Space preview** | medium | both mechanisms already proven; the work is a tray presence |
+| **Viewer GPU path** | large | wait for real use to say whether 23 fps is limiting |
+| **Smaller things** | small | per-file layer override, WebP, presets polish |
 
-Encoding is now the bottleneck, and there is no cheap fix: `png:compressionLevel`
-is ignored by OIIO (identical file sizes at every level, measured), and JPEG —
-about 4× faster — cannot carry alpha.
+**What decides the order.** Thumbnails and the hotkey preview change how the tool
+feels before it is even opened, which is worth more than making an already
+interactive viewer faster. The GPU path is deliberately last: the roadmap gates it
+on knowing whether the current speed actually gets in the way, and until v3.0 has
+been used in anger that is a guess.
 
-The real answer is to stop producing an image at all. OCIO has a GPU path; feeding
-the cached linear layer to a WebGL canvas as a float texture and running the
-display transform in a shader removes both the transform and the encode from every
-interaction, leaving only the upload. That is how tev is fast, and it also gets
-sequence playback (item 2) essentially for free, since frames stop round-tripping
-through PNG.
-
-Worth doing after enough real use to know whether 23 fps at 1080p is actually
-limiting. For reviewing stills it may not be.
-
-Still missing from the viewer regardless of the above:
-
-- **A/B comparison** between two images, with a difference mode. tev's other
-  genuinely good idea.
-- **Higher-resolution render when zoomed past 1:1.** The window renders at a fixed
-  1600px and shows real pixels beyond that; a 4K plate at 200% is therefore
-  showing interpolated source. Re-rendering the visible crop at full resolution
-  would fix it and is not hard, just not done.
-
-### 2. Explorer thumbnails for .exr *(the first non-Python part)*
+### 1. Explorer thumbnails for .exr *(the first non-Python part)*
 
 Show the actual image as the file's thumbnail in Explorer, with the aperture icon
 kept as a small badge in the bottom-right corner so the file type is still
@@ -349,7 +349,7 @@ loaded, so replacing it during development needs `explorer.exe` killed or a
 reboot; and the thumbnail cache has to be busted after a change, the same
 `ie4uinit -show` problem the file icon already had.
 
-### 3. Space-bar preview, QuickLook style *(feasible in Python — proven)*
+### 2. Space-bar preview, QuickLook style *(feasible in Python — proven)*
 
 Select an `.exr` in Explorer, press a key, see it. The same gesture
 **[QuickLook](https://github.com/QL-Win/QuickLook)** provides, which is already how
@@ -388,7 +388,43 @@ several files selected should probably open the first rather than a window each.
 Note `comtypes` was installed while proving this and is not yet used by anything;
 it would become a real dependency and needs adding to the spec if this ships.
 
-### 4. Sequence player by the preview — **stepping done in v3.0**
+### 3. Viewer, stage two — the GPU path
+
+Stage one shipped (see above): the layer is decoded once and kept, so exposure,
+gamma, channel and layer changes are interactive. What is left is the part that
+makes it feel like [tev](https://github.com/Tom94/tev) rather than a good preview.
+
+Profiled at 900px on a 2160² 80-channel frame, with decoding already cached:
+
+| | |
+|---|---|
+| display transform | 40 ms |
+| **PNG encode** | **108 ms** |
+
+Encoding is now the bottleneck, and there is no cheap fix: `png:compressionLevel`
+is ignored by OIIO (identical file sizes at every level, measured), and JPEG —
+about 4× faster — cannot carry alpha.
+
+The real answer is to stop producing an image at all. OCIO has a GPU path; feeding
+the cached linear layer to a WebGL canvas as a float texture and running the
+display transform in a shader removes both the transform and the encode from every
+interaction, leaving only the upload. That is how tev is fast, and it also gets
+sequence playback (item 2) essentially for free, since frames stop round-tripping
+through PNG.
+
+Worth doing after enough real use to know whether 23 fps at 1080p is actually
+limiting. For reviewing stills it may not be.
+
+Still missing from the viewer regardless of the above:
+
+- **A/B comparison** between two images, with a difference mode. tev's other
+  genuinely good idea.
+- **Higher-resolution render when zoomed past 1:1.** The window renders at a fixed
+  1600px and shows real pixels beyond that; a 4K plate at 200% is therefore
+  showing interpolated source. Re-rendering the visible crop at full resolution
+  would fix it and is not hard, just not done.
+
+### 4. Sequence playback — **stepping done in v3.0**
 
 Stepping and scrubbing shipped: a frame strip under the preview with prev/next, a
 slider, a counter, and `,` / `.`. The preview and the pixel probe both follow the
@@ -560,12 +596,15 @@ anyone else can run it. Largest item here and gated on hardware.
 
 ## Known limitations
 
-- Only the first subimage of a multi-part EXR is read.
-- The layer dropdown is populated from the selected entry. Other files fall back to
-  auto-detect, with a warning.
-- Cryptomatte objects are selected from a list. Picking by clicking the image
-  needs the viewer (item 1).
 - Explorer shows the `.exr` file icon, not the image. A real thumbnail needs a
-  native `IThumbnailProvider` DLL — see V3 item 2.
-- There is no hotkey preview. The app has to be running to catch one, which needs
-  a resident tray mode — see V3 item 3.
+  native `IThumbnailProvider` DLL — see V3.1 item 1.
+- There is no hotkey preview. The app has to be running to catch one, which needs a
+  resident tray mode — see V3.1 item 2.
+- The layer dropdown applies one choice to the batch, falling back to auto-detect
+  per file. Mixed batches would want a choice remembered per entry.
+- Sequence frames step rather than play; smooth playback needs a pre-rendered
+  cache — see V3.1 item 4.
+- The exe is unsigned, so SmartScreen warns on first run. A code-signing
+  certificate is the only fix, and it is an annual cost rather than a code change.
+- Windows only. `core.py` is portable, but every piece of shell integration is not
+  — see the macOS entry above.
