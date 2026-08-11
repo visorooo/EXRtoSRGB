@@ -16,6 +16,14 @@ alongside the exe.
 """
 from PyInstaller.utils.hooks import collect_all
 
+# The version goes in the filename, so a downloaded exe says what it is without
+# being launched. Read from the source rather than repeated here - two places to
+# update is one place to forget.
+import re
+with open('exr2srgb.py', encoding='utf-8') as fh:
+    VERSION = re.search(r'^VERSION\s*=\s*"([^"]+)"', fh.read(), re.M).group(1)
+EXE_NAME = 'EXRtoSRGB_v%s' % VERSION
+
 datas = [('ui', 'ui'), ('app.ico', '.'), ('exr.ico', '.')]
 binaries = []
 # 'cli' is imported inside main() rather than at module scope, so PyInstaller's
@@ -51,7 +59,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='EXRtoSRGB',
+    name=EXE_NAME,
     icon='app.ico',
     debug=False,
     bootloader_ignore_signals=False,

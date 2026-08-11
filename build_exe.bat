@@ -1,9 +1,16 @@
 @echo off
 REM ============================================================
-REM  Build EXRtoSRGB.exe  (run this on Windows, in this folder)
+REM  Build EXRtoSRGB_v<version>.exe  (run on Windows, in this folder)
 REM
-REM  The exe lands next to this script rather than in dist\, so
-REM  it is the first thing you see in the folder.
+REM  The exe lands next to this script rather than in dist\, so it is
+REM  the first thing you see in the folder. The version is part of the
+REM  filename so a downloaded copy says what it is without being run.
+REM
+REM  EXRtoSRGB.spec owns the name - it reads VERSION out of exr2srgb.py.
+REM  This script deliberately does NOT work the name out for itself:
+REM  doing that in cmd needs a python one-liner inside a for /f, and the
+REM  parentheses in it break cmd's parser. One source of truth, and the
+REM  filename is discovered afterwards instead.
 REM ============================================================
 
 REM 1) install dependencies
@@ -14,11 +21,12 @@ REM 2) refuse to build over a running copy
 REM    PyInstaller deletes the old exe before writing the new one, so a running
 REM    instance fails it with "Access is denied" - and the build otherwise
 REM    carried on and reported success, leaving a stale exe that looks current.
-tasklist /FI "IMAGENAME eq EXRtoSRGB.exe" 2>nul | find /I "EXRtoSRGB.exe" >nul
+REM    Matches any version: an older build is just as capable of holding a lock.
+tasklist /FI "IMAGENAME eq EXRtoSRGB*.exe" 2>nul | find /I "EXRtoSRGB" >nul
 if not errorlevel 1 (
     echo.
-    echo EXRtoSRGB.exe is running. Close it first - the build cannot replace a
-    echo locked file, and would leave you with the previous version.
+    echo An EXR to sRGB window is running. Close it first - the build cannot
+    echo replace a locked file, and would leave you with the previous version.
     pause
     exit /b 1
 )
@@ -35,11 +43,21 @@ REM    "Done." used to print unconditionally, so a failed build read as a
 REM    successful one. Never say Done unless PyInstaller said so too.
 if errorlevel 1 (
     echo.
-    echo BUILD FAILED - EXRtoSRGB.exe was NOT rebuilt. Scroll up for the error.
+    echo BUILD FAILED - nothing was rebuilt. Scroll up for the error.
+    pause
+    exit /b 1
+)
+
+dir /b EXRtoSRGB_v*.exe >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo BUILD FAILED - PyInstaller reported success but no versioned exe
+    echo is here. Check that VERSION in exr2srgb.py is readable.
     pause
     exit /b 1
 )
 
 echo.
-echo Done.  EXRtoSRGB.exe is in this folder.
+echo Done.  Built:
+for %%f in (EXRtoSRGB_v*.exe) do echo    %%f
 pause

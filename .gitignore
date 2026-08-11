@@ -8,7 +8,9 @@ venv/
 # Build output. The .exe ships as a GitHub Release asset, never in the repo —
 # it is ~37 MB and bundles the OIIO/OCIO DLLs. build_exe.bat writes it to the
 # repo root so it is easy to find; PyInstaller's scratch goes to %TEMP%.
-/EXRtoSRGB.exe
+# Wildcarded because the filename carries the version, so each build is a new
+# name and an exact rule would start letting old ones through.
+/EXRtoSRGB*.exe
 build/
 dist/
 *.manifest

@@ -507,7 +507,23 @@ partial-alpha pixels, which is easy to mistake for a broken alpha channel. The
 
 ## Release
 
-`EXRtoSRGB.exe` (~37.6 MB) ships as a GitHub Release asset and is gitignored.
+**The exe carries its version in the filename** — `EXRtoSRGB_v3.0.4.exe`. The spec
+reads `VERSION` out of `exr2srgb.py`, so there is one place to change it, and
+`.gitignore` matches `/EXRtoSRGB*.exe` because an exact rule would start letting
+old builds through. `build_exe.bat` deliberately does **not** work the name out for
+itself: doing that in cmd needs a Python one-liner inside a `for /f`, and the
+parentheses in it break cmd's parser — it discovers the built file afterwards
+instead.
+
+Two consequences worth knowing. GitHub's `/releases/latest/download/<name>` needs an
+exact filename, so the README's download button points at the **latest-release page**
+rather than at the asset; a fixed link would break on every version. And the file
+association records the full path of the exe that registered it, so **upgrading to a
+new filename leaves the old association pointing at a file that is gone** — the
+double-click and the right-click verbs need re-toggling under the cogwheel after an
+upgrade. That is the cost of the versioned name.
+
+`EXRtoSRGB_v<version>.exe` (~37.7 MB) ships as a GitHub Release asset and is gitignored.
 `build_exe.bat` writes it to the **repo root** rather than `dist/`, so the folder
 shows the app; PyInstaller's scratch goes to `%TEMP%`.
 

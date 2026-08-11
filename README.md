@@ -15,11 +15,11 @@ destination is a comp rather than a screen.
 
 <br>
 
-<a href="../../releases/latest/download/EXRtoSRGB.exe">
-  <img src="https://img.shields.io/badge/⬇%20Download%20for%20Windows-EXRtoSRGB.exe-1f20f1?style=for-the-badge&labelColor=1f20f1&color=2b2cf5" alt="Download EXRtoSRGB.exe" height="46">
+<a href="../../releases/latest">
+  <img src="https://img.shields.io/badge/⬇%20Download%20for%20Windows-latest%20release-1f20f1?style=for-the-badge&labelColor=1f20f1&color=2b2cf5" alt="Download the latest release" height="46">
 </a>
 
-**One file. Nothing to install.** · [All releases](../../releases) · [What's new](../../releases/latest)
+**One file. Nothing to install.** · [All releases](../../releases)
 
 <br>
 
@@ -69,8 +69,10 @@ checked frame-for-frame against Nuke conversions of the same renders.
 
 ## Install
 
-### [⬇ Download EXRtoSRGB.exe](../../releases/latest/download/EXRtoSRGB.exe)
+### [⬇ Download the latest release](../../releases/latest)
 
+One file — `EXRtoSRGB_v3.0.4.exe` or whatever the current version is. The version
+is in the filename, so a copy sitting in a downloads folder still says what it is.
 Run it. That's the whole installation.
 
 Self-contained — the OpenImageIO / OpenColorIO libraries and every ACES config are
@@ -235,6 +237,10 @@ and unticking hands the file type back.
 `.exr` files also get their own aperture icon, distinct from the app's, so a file and
 the app that opens it don't look identical in Explorer.
 
+> The association records the path of the exe that registered it, and the filename
+> carries the version — so after upgrading, re-tick the toggle to point Windows at
+> the new build.
+
 The window opens **centred and sized to the image**, up to 1:1, capped to your screen.
 Move or resize it and that's remembered.
 
@@ -326,7 +332,7 @@ near-black smear.
 ## Command line
 
 ```bash
-EXRtoSRGB.exe --cli shots/ --format png --bits 16 --out out/
+EXRtoSRGB_v3.0.4.exe --cli shots/ --format png --bits 16 --out out/
 ```
 
 | Flag | |
