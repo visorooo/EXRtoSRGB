@@ -93,7 +93,7 @@ conditions that must all hold, and why a real drop cannot be simulated in a test
 
 ---
 
-## Shipped — v2.1 (V3 in progress)
+## Shipped — v2.1
 
 **Parallel conversion.** Batches run across a thread pool instead of one frame
 at a time. OIIO and OCIO both release the GIL for decoding and the transform, so
@@ -222,6 +222,41 @@ converting to scene-linear TIFF and reading back gives pixels identical to the
 source layer, values above 1.0 included.
 
 ---
+
+## Shipped — v3.0
+
+**Every part of a multi-part EXR is a layer.** Blender's File Output node writes
+one part per slot, so a custom AOV export arrives as N parts rather than N channel
+groups — a 16-part render showed exactly one layer before this. Cryptomatte is read
+from whichever part carries it.
+
+**Single-channel and X/Y/Z passes read.** Octane writes ambient occlusion and depth
+as a lone `Y`; Blender writes Normal and Position as `X,Y,Z` triples and Mist as a
+lone `Z`. The same letter means different things in different files, so the whole
+channel set decides.
+
+**A/B comparison** in the viewer — flip, wipe, or difference, on one key. The
+difference is taken in linear so a given gap reads the same in shadows and
+highlights, with exposure as the gain control.
+
+**Real pixels past 1:1.** The base render is capped at 1600px, so on anything larger
+even "100%" was showing an upscale. The visible region is now re-rendered at source
+resolution and laid over the top.
+
+**Sequence stepping** next to the preview — slider, prev/next, `,` / `.`. Stepping
+rather than playback, because one preview frame is 125 ms at 1080p and that is
+decode cost.
+
+**A command line** — `EXRtoSRGB.exe --cli`, or `cli.py` from source. Asserts the ACES
+ladder through itself, since a second route to the same transform drifts silently.
+
+**Presets**, saving everything except the output folder, and **convert every layer**
+in one pass, each file named for its layer.
+
+**The pixel probe reports the display colour** as well as the linear value, with an
+eyedropper that holds a reading still, and every value copies on click.
+
+**Settings and shortcuts** moved behind the cogwheel in the title bar.
 
 ## V3
 
