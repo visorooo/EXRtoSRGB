@@ -36,8 +36,12 @@
         </svg>
         <h1>EXR → sRGB</h1>
         <span class="sub">ACES linear → PNG / JPEG / TIFF</span>
-        <span class="spacer"></span>
+        <!--
+          Before the spacer, so it reads as part of the subtitle rather than
+          drifting to the far side of the bar away from what it describes.
+        -->
         <span class="sub" id="version"></span>
+        <span class="spacer"></span>
         <!--
           Windows integration lives behind this rather than in Output settings:
           those are per-job, these are set once and change the machine.
