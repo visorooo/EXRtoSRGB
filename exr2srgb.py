@@ -689,10 +689,8 @@ def repair_association():
     # and that is exactly when the recorded path most needs to be right - it is
     # what the user is about to pick in the "Open with" dialog.
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Classes\.exr") as k:
-            if winreg.QueryValueEx(k, "")[0] != PROG_ID:
-                return False
+        winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                       r"Software\Classes\%s" % PROG_ID))
     except OSError:
         return False
     key = r"Software\Classes\%s\shell\open\command" % PROG_ID
@@ -791,9 +789,24 @@ def set_association(enable):
             winreg.HKEY_CURRENT_USER,
             r"Software\Classes\%s\shell\open\command" % PROG_ID) as k:
         winreg.SetValueEx(k, "", 0, winreg.REG_SZ, _exe_command())
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
-                          r"Software\Classes\.exr") as k:
-        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
+    # Claim .exr's class default only when the type is genuinely unowned.
+    #
+    # This looks like the main event and is actually the trap. Windows 11's
+    # Settings > Default apps reads this key to decide what to *display* as the
+    # current default, but resolves an actual double-click through UserChoice
+    # and the machine-wide registration. Write it while Photoshop owns .exr and
+    # Settings shows "EXRtoSRGB.exe" as the default, greys out its "Set default"
+    # button because there is apparently nothing to change - and Explorer goes
+    # on opening Photoshop. The user is then locked out of the one UI that could
+    # have fixed it, by us.
+    #
+    # So: if something already owns .exr, leave the key alone and let Settings
+    # tell the truth. `OpenWithProgids` and Capabilities below still put us in
+    # the list, which is what the user needs in order to pick us.
+    if effective_handler() is None:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                              r"Software\Classes\.exr") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
 
     # Everything below is what makes us *choosable* rather than merely
     # registered. Without it the app is not offered in Settings > Default apps
