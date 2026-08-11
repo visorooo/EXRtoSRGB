@@ -13,6 +13,25 @@ Batch convert to **PNG / JPEG / TIFF**, view `.exr` files by double-clicking the
 pull **cryptomatte** mattes, and write **scene-linear 32-bit TIFF** when the
 destination is a comp rather than a screen.
 
+<br>
+
+<a href="../../releases/latest/download/EXRtoSRGB.exe">
+  <img src="https://img.shields.io/badge/⬇%20Download%20for%20Windows-EXRtoSRGB.exe-1f20f1?style=for-the-badge&labelColor=1f20f1&color=2b2cf5" alt="Download EXRtoSRGB.exe" height="46">
+</a>
+
+**One file. Nothing to install.** · [All releases](../../releases) · [What's new](../../releases/latest)
+
+<br>
+
+<img src="docs/converter.png" alt="The converter: file list, ACES settings, and a live preview of the conversion" width="880">
+
+<br><br>
+
+<img src="docs/viewer.png" alt="The viewer: an EXR opened by double-clicking it, with the pixel probe reading linear and display values" width="880">
+
+<sub>Double-click any `.exr` to open it in the viewer. The probe reads the linear
+scene value and the display colour side by side.</sub>
+
 </div>
 
 ---
@@ -44,11 +63,17 @@ checked frame-for-frame against Nuke conversions of the same renders.
 
 ## Install
 
-Download `EXRtoSRGB.exe` from [**Releases**](../../releases) and run it.
+### [⬇ Download EXRtoSRGB.exe](../../releases/latest/download/EXRtoSRGB.exe)
+
+Run it. That's the whole installation.
 
 Self-contained — the OpenImageIO / OpenColorIO libraries and every ACES config are
 compiled in. Nothing to install, no config file to place, no runtime to match.
 Windows supplies the webview, so there's no bundled browser either.
+
+There's a sample render in [`docs/sample_render.exr`](docs/sample_render.exr) if you
+want something to drop on it straight away — it's scene-linear with the sun well
+past 1.0, so it actually shows the ACES highlight roll-off.
 
 <details>
 <summary>Run from source instead</summary>
