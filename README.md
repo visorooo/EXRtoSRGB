@@ -72,8 +72,9 @@ compiled in. Nothing to install, no config file to place, no runtime to match.
 Windows supplies the webview, so there's no bundled browser either.
 
 There's a sample render in [`docs/sample_render.exr`](docs/sample_render.exr) if you
-want something to drop on it straight away — it's scene-linear with the sun well
-past 1.0, so it actually shows the ACES highlight roll-off.
+want something to drop on it straight away — the frame in the screenshots above.
+Scene-linear ACEScg, 1600 × 1000, with highlights up past 10.0, so it actually
+shows the ACES roll-off rather than looking the same through any curve.
 
 <details>
 <summary>Run from source instead</summary>
@@ -278,6 +279,14 @@ instead of being hunted through a list.
 Enable it under the **⚙** to add a convert submenu to `.exr` files in Explorer:
 PNG 8/16-bit, JPEG, TIFF 16-bit, and TIFF 32-bit scene-linear. Conversion runs
 headless — no window ever opens.
+
+<div align="center">
+  <img src="docs/context_menu.png" alt="The Explorer right-click menu with a Convert to sRGB submenu listing the five presets" width="720">
+</div>
+
+The verbs are registered under `SystemFileAssociations\.exr`, so they show up
+whatever application owns the file type, and `.exr` files get their own aperture
+icon once the association is on.
 
 <details>
 <summary>Why it's under "Show more options" on Windows 11</summary>
