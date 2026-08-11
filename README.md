@@ -32,6 +32,12 @@ destination is a comp rather than a screen.
 <sub>Double-click any `.exr` to open it in the viewer. The probe reads the linear
 scene value and the display colour side by side.</sub>
 
+<br><br>
+
+<img src="docs/context_menu.png" alt="The Explorer right-click menu with a Convert to sRGB submenu listing the five presets" width="880">
+
+<sub>Or skip the app entirely — right-click any `.exr` and convert it in place.</sub>
+
 </div>
 
 ---
@@ -278,11 +284,7 @@ instead of being hunted through a list.
 
 Enable it under the **⚙** to add a convert submenu to `.exr` files in Explorer:
 PNG 8/16-bit, JPEG, TIFF 16-bit, and TIFF 32-bit scene-linear. Conversion runs
-headless — no window ever opens.
-
-<div align="center">
-  <img src="docs/context_menu.png" alt="The Explorer right-click menu with a Convert to sRGB submenu listing the five presets" width="720">
-</div>
+headless — no window ever opens. It's [pictured at the top](#exr--srgb).
 
 The verbs are registered under `SystemFileAssociations\.exr`, so they show up
 whatever application owns the file type, and `.exr` files get their own aperture
