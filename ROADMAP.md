@@ -354,7 +354,14 @@ several files selected should probably open the first rather than a window each.
 Note `comtypes` was installed while proving this and is not yet used by anything;
 it would become a real dependency and needs adding to the spec if this ships.
 
-### 4. Sequence player by the preview *(small — and measured)*
+### 4. Sequence player by the preview — **stepping done in v3.0**
+
+Stepping and scrubbing shipped: a frame strip under the preview with prev/next, a
+slider, a counter, and `,` / `.`. The preview and the pixel probe both follow the
+frame. **Smooth playback did not** — it needs the pre-rendered cache described
+below, which is the same latency problem the GPU path solves, so it waits for that.
+
+The original write-up, kept because the measurements are what decide the design:
 
 Step and scrub through a sequence's frames next to the existing preview. Much
 smaller than the viewer above and worth doing first, because `make_thumbnail`
@@ -388,19 +395,25 @@ has, solved once for both.
 
 ### 5. Smaller things
 
+- ~~**Convert all layers at once**, one file per AOV.~~ **Done in v3.0.** A pass per
+  layer with `layer_tag` in the suffix; without that they collide on one filename.
+- ~~**Presets** — save a named set of settings.~~ **Done in v3.0.** Everything except
+  `out_dir`, which is where rather than how.
+- ~~**CLI entry point.**~~ **Done in v3.0** — `cli.py`, plus `EXRtoSRGB.exe --cli`.
+  Asserts the ACES ladder through itself, because a second route to the same
+  transform drifts silently otherwise.
 - **Per-file layer override.** The dropdown applies one choice to the batch, falling
   back to auto-detect per file. Mixed batches would benefit from remembering a
-  choice per entry.
-- **Convert all layers at once**, one file per AOV. The grouping makes it nearly
-  free.
+  choice per entry. Less pressing now that "every layer" exists — that covers the
+  common case of wanting all of them.
 - **Multi-part EXR.** Only the first subimage is read. Rare from Blender and
   Redshift, but Nuke writes them.
-- **Presets** — save a named set of settings, since studios use one combination for
-  months at a time.
-- **WebP / JPEG-XL** output, if a smaller display-ready format is ever wanted.
-  Lower priority than TIFF (item 3), which has an actual pipeline reason to exist.
-- **CLI entry point.** `core.py` is already importable; a thin `argparse` wrapper
-  would make it render-farm usable.
+- **WebP** output — **available**, the bundled OIIO has a WebP writer (checked).
+  8-bit only, so it slots in beside JPEG rather than replacing anything.
+- **JPEG-XL** — **blocked, not a choice.** This OIIO build has no `jxl` writer
+  (`ImageOutput.create` returns nothing and the format is absent from
+  `extension_list`). It needs an OIIO built with libjxl, which is a dependency
+  change rather than a feature.
 
 ---
 
