@@ -237,9 +237,9 @@ and unticking hands the file type back.
 `.exr` files also get their own aperture icon, distinct from the app's, so a file and
 the app that opens it don't look identical in Explorer.
 
-> The association records the path of the exe that registered it, and the filename
-> carries the version — so after upgrading, re-tick the toggle to point Windows at
-> the new build.
+> After upgrading, open the app once and it re-points the association at the new
+> build by itself. If Windows is still opening `.exr` with something else, tick the
+> toggle — that clears the default Windows recorded when an app was picked by hand.
 
 The window opens **centred and sized to the image**, up to 1:1, capped to your screen.
 Move or resize it and that's remembered.

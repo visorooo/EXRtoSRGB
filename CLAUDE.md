@@ -413,6 +413,24 @@ hides entirely when neither is supported, so there is no empty sheet off Windows
 `assoc`/`ctx` and their `-wrap` ids are unchanged, so the platform gating in
 `applyDefaults`' caller still works.
 
+**`UserChoice` beats everything the app writes.** Explorer resolves `.exr` through
+`FileExts\.exr\UserChoice` - and on Windows 11 also `UserChoiceLatest`, which
+nests the ProgID one level deeper - before it ever looks at `Software\Classes\.exr`.
+Windows writes it the moment someone picks a default by hand in "Open with". While
+the app ignored it, ticking the toggle wrote the right registration and Explorer
+carried on opening Photoshop, so the checkbox looked broken when it was the reading
+that was wrong. `association_state` consults it first, and `set_association(True)`
+deletes it - the Hash beside it is signed per user and cannot be forged, but
+deleting is allowed and Explorer then falls back to the class registration.
+
+**The registration is repaired at startup.** The command records an absolute path
+and the filename carries the version, so every upgrade leaves it aimed at a file
+that is gone. `repair_association()` runs from `Api.association()`, rewrites the
+command and icon when the recorded path is not the running one, and only ever
+touches a registration that is already ours - it cannot take a file type from
+another application. Without it the natural recovery is "Open with", which writes
+a UserChoice and shows the *application* icon instead of the document one.
+
 **File association is per-user, under `HKCU\Software\Classes`.** No elevation,
 nothing changed for other accounts, and `SHChangeNotify` is called afterwards or
 Explorer keeps the old icon and handler until the next sign-in. Unregistering

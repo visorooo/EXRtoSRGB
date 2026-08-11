@@ -30,7 +30,7 @@ from webview.dom import DOMEventHandler
 import core
 
 APP_NAME = "EXR → sRGB"
-VERSION = "3.0.4"
+VERSION = "3.0.5"
 
 # _MEIPASS only exists in a frozen build; from source this is the repo folder.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -382,11 +382,76 @@ def convert_cli(path, fmt="png", bits=16, transfer="display", layer=None):
         return None
 
 
+# Explorer resolves .exr through this before it ever looks at
+# HKCU\Software\Classes\.exr. Windows writes it whenever the user picks a
+# default with "Open with", and Windows 11 keeps a second copy under
+# UserChoiceLatest. Ignoring them is why ticking the toggle appeared to do
+# nothing: the write succeeded, and the OS was reading somewhere else.
+FILEEXTS = (r"Software\Microsoft\Windows\CurrentVersion\Explorer"
+            r"\FileExts\.exr")
+USER_CHOICE_KEYS = ("UserChoice", "UserChoiceLatest")
+
+
+def _user_choice():
+    """The ProgID Explorer is actually honouring, or None."""
+    import winreg
+    for sub in USER_CHOICE_KEYS:
+        for path in ("%s\\%s" % (FILEEXTS, sub),
+                     # Windows 11 nests it one deeper under UserChoiceLatest
+                     "%s\\%s\\ProgId" % (FILEEXTS, sub)):
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as k:
+                    value = winreg.QueryValueEx(k, "ProgId")[0]
+                    if value:
+                        return value
+            except OSError:
+                continue
+    return None
+
+
+def _clear_user_choice():
+    """
+    Drop Windows' recorded default so our ProgID is reachable again.
+
+    The Hash beside it is signed per user and cannot be forged, so there is no
+    way to *write* a UserChoice - but deleting is allowed, and Explorer then
+    falls back to the class registration. This is what makes the toggle able to
+    take effect at all once the user has ever picked a default by hand.
+    """
+    import winreg
+
+    def nuke(path):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0,
+                                winreg.KEY_ALL_ACCESS) as k:
+                while True:
+                    try:
+                        nuke(path + "\\" + winreg.EnumKey(k, 0))
+                    except OSError:
+                        break
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
+            return True
+        except OSError:
+            return False
+
+    return [sub for sub in USER_CHOICE_KEYS
+            if nuke("%s\\%s" % (FILEEXTS, sub))]
+
+
 def association_state():
-    """Is .exr currently pointing at us? Returns (associated, current_handler)."""
+    """
+    Is .exr currently pointing at us? Returns (associated, current_handler).
+
+    A UserChoice outranks the class registration, so it is checked first -
+    otherwise the toggle reports the state it wrote rather than the state the
+    system is in, which is a checkbox that lies.
+    """
     if os.name != "nt":
         return False, None
     import winreg
+    chosen = _user_choice()
+    if chosen:
+        return chosen == PROG_ID, chosen
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                             r"Software\Classes\.exr") as k:
@@ -394,6 +459,47 @@ def association_state():
     except OSError:
         return False, None
     return current == PROG_ID, current
+
+
+def repair_association():
+    """
+    Re-point our own registration at the exe that is running.
+
+    The command records an absolute path, and the filename carries the version,
+    so every upgrade leaves the previous registration aimed at a file that is no
+    longer there: double-click stops working, and the natural next move - picking
+    the app by hand in "Open with" - writes a UserChoice that overrides us and
+    uses the application icon rather than the document one.
+
+    Only ever rewrites a registration that is already ours, and only when the
+    recorded path differs from the running one, so it cannot take a file type
+    from another application or undo a deliberate change.
+    """
+    if os.name != "nt":
+        return False
+    import winreg
+    associated, _ = association_state()
+    if not associated:
+        return False
+    key = r"Software\Classes\%s\shell\open\command" % PROG_ID
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as k:
+            current = winreg.QueryValueEx(k, "")[0]
+    except OSError:
+        current = ""
+    wanted = _exe_command()
+    if current == wanted:
+        return False
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key) as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, wanted)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                              r"Software\Classes\%s\DefaultIcon" % PROG_ID) as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, _persistent_icon("exr.ico"))
+        refresh_shell()
+        return True
+    except OSError:
+        return False
 
 
 def set_association(enable):
@@ -444,6 +550,11 @@ def set_association(enable):
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
                           r"Software\Classes\.exr") as k:
         winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
+
+    # Last, and load-bearing: whatever Windows recorded when a default was
+    # picked by hand sits in front of everything above. Without clearing it the
+    # registration is correct and completely inert.
+    _clear_user_choice()
 
     refresh_shell()
     return True
@@ -1074,12 +1185,22 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def association(self):
-        """Current .exr handler state, for the settings toggle."""
+        """
+        Current .exr handler state, for the settings toggle.
+
+        Repairs a stale path on the way past: this runs at startup, which is the
+        first moment after an upgrade that anything can notice the registration
+        points at the previous filename.
+        """
         if os.name != "nt":
             return {"supported": False, "associated": False}
+        repaired = repair_association()
         associated, current = association_state()
+        if repaired:
+            self._js("onLog",
+                     "Updated the .exr association to this version.", "dim")
         return {"supported": True, "associated": associated,
-                "current": current or ""}
+                "current": current or "", "repaired": repaired}
 
     def context_menu(self):
         if os.name != "nt":
