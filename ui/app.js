@@ -37,6 +37,7 @@ function settings() {
     unpremult: $('unpremult').checked,
     suffix: $('suffix').checked ? suffixFor() : '',
     out_dir: $('outdir').value.trim(),
+    all_layers: $('all-layers').checked,
   };
 }
 
@@ -1111,6 +1112,12 @@ function wire() {
 
   wireFrames();
   wireKeys();
+
+  // Picking one layer and "every layer" are mutually exclusive statements.
+  $('all-layers').onchange = () => {
+    $('layer').disabled = $('all-layers').checked;
+    schedulePreview();
+  };
 }
 
 /*
@@ -1229,7 +1236,123 @@ function applyDefaults() {
   setValue($('alpha'), 'keep');
   $('unpremult').checked = true;
   $('suffix').checked = true;
+  $('all-layers').checked = false;
   $('outdir').value = '';
+}
+
+/* ---------------------------------------------------------------------------
+ * Presets
+ * ------------------------------------------------------------------------ */
+
+/*
+ * Apply a saved settings blob.
+ *
+ * Order matters. The colour lists depend on the config, so that goes first and
+ * is awaited before input space and display are set - writing them against the
+ * previous config's options silently drops them. syncFormat() runs last because
+ * it is what enforces the container rules, and a preset is just another
+ * settings blob arriving from outside.
+ */
+async function applyPreset(blob) {
+  if (!blob) return;
+  if (blob.config && blob.config !== $('config').value) {
+    setValue($('config'), blob.config);
+    await refreshColorOptions();
+  }
+  const pick = (id, v) => {
+    if (v === undefined || v === null) return;
+    if ([...$(id).options].some((o) => o.value === String(v))) {
+      setValue($(id), String(v));
+    }
+  };
+  pick('input-cs', blob.src);
+  pick('display', blob.display);
+  setValue($('look'), blob.transfer === 'linear' ? 'linear'
+                    : blob.tone === false ? 'plain' : 'tone');
+  pick('format', blob.format);
+  pick('bits', blob.bits);
+  pick('quality', blob.quality);
+  pick('alpha', blob.alpha_mode);
+  if (blob.unpremult !== undefined) $('unpremult').checked = !!blob.unpremult;
+  if (blob.suffix !== undefined) $('suffix').checked = !!blob.suffix;
+  syncFormat();
+  schedulePreview();
+}
+
+function fillPresets(names, keep) {
+  const sel = $('preset');
+  const opts = [{ value: '', label: 'Presets…' }]
+    .concat(names.map((n) => ({ value: n, label: n })));
+  fillSelect(sel, opts, keep && names.includes(keep) ? keep : '');
+  $('preset-del').disabled = !sel.value;
+}
+
+async function wirePresets() {
+  const got = await window.pywebview.api.presets();
+  let saved = got.presets || {};
+  fillPresets(got.names || []);
+
+  $('preset').onchange = async () => {
+    const name = $('preset').value;
+    $('preset-del').disabled = !name;
+    if (!name) return;
+    await applyPreset(saved[name]);
+    log(`Loaded preset ${name}`, 'dim');
+  };
+
+  const nameBox = $('preset-name');
+  const naming = (on) => {
+    nameBox.hidden = !on;
+    $('preset').hidden = on;
+    $('preset-save').textContent = on ? 'Cancel' : 'Save';
+    if (on) {
+      nameBox.value = $('preset').value || '';
+      nameBox.focus();
+      nameBox.select();
+    }
+  };
+
+  const commit = async () => {
+    const name = nameBox.value.trim();
+    if (!name) {
+      naming(false);
+      return;
+    }
+    const r = await window.pywebview.api.save_preset(name, settings());
+    if (!r.ok) {
+      log(r.error || 'Could not save the preset.', 'err');
+      return;
+    }
+    const fresh = await window.pywebview.api.presets();
+    saved = fresh.presets || {};
+    naming(false);
+    fillPresets(fresh.names || [], name);
+    $('preset-del').disabled = false;
+  };
+
+  $('preset-save').onclick = () => naming(nameBox.hidden);
+  nameBox.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      // stop here, or the global handler reads it as cancel-the-convert
+      e.preventDefault();
+      e.stopPropagation();
+      naming(false);
+    }
+  };
+
+  $('preset-del').onclick = async () => {
+    const name = $('preset').value;
+    if (!name) return;
+    const r = await window.pywebview.api.delete_preset(name);
+    const fresh = await window.pywebview.api.presets();
+    saved = fresh.presets || {};
+    fillPresets(fresh.names || []);
+    log(`Deleted preset ${name}`, 'dim');
+    return r;
+  };
 }
 
 window.addEventListener('pywebviewready', async () => {
@@ -1250,6 +1373,8 @@ window.addEventListener('pywebviewready', async () => {
                   { persist: false, rerender: false });
   $('version').textContent = 'v' + init.version;
   await reloadConfigList(init.config);
+
+  await wirePresets();
 
   const assoc = await window.pywebview.api.association();
   if (assoc.supported) {

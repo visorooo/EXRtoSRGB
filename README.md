@@ -269,6 +269,67 @@ off the cached layer rather than re-reading the file.
 
 ---
 
+## Presets
+
+The panel header has a **preset** dropdown. Pick your combination of config,
+display, format and bit depth, hit **Save**, name it, and it's there next launch —
+studios use one combination for months, and re-picking it every time is the kind of
+friction that ends in the wrong curve shipping.
+
+Presets deliberately **do not store the output folder**. A preset is *how* to
+convert, not *where* to put it; carrying a stale path between projects is worse than
+picking one each time.
+
+---
+
+## Convert every layer at once
+
+Tick **Convert every layer, one file each** and a multi-AOV EXR produces one image
+per layer in a single run, each named for its layer —
+`shot_srgb.png`, `shot_Diffuse_Color_srgb.png`, `shot_Ambient_Occlusion_srgb.png`.
+The layer name in the filename isn't decoration: without it every layer resolves to
+the same path and only the last one survives.
+
+The layer list is read from the first file, since a sequence shares its layers.
+
+---
+
+## Command line
+
+For a farm, a build step, or a shell loop. `cli.py` imports only the conversion
+core — no window is created.
+
+```bash
+EXRtoSRGB.exe --cli shots/ --format png --bits 16 --out out/
+```
+
+From source it's the same interface:
+
+```bash
+python cli.py shots/beauty.0001.exr --all-layers --out out/
+```
+
+Useful flags — `--help` lists them all:
+
+| Flag | Does |
+|---|---|
+| `--out DIR` | output folder (default: beside each source) |
+| `--format` / `--bits` / `--quality` | container and depth, same rules as the app |
+| `--config NAME` | a built-in name, a substring of one, or a path to `config.ocio` |
+| `--display` / `--input-cs` / `--look` | colour, `--look linear` for scene-linear |
+| `--layer NAME` / `--all-layers` | one layer, or every layer as its own file |
+| `--jobs N` | worker threads (default automatic, capped at 8) |
+| `--dry-run` | print what would be written and stop |
+| `--list-configs` / `--list-displays` / `--list-layers` | inspect and exit |
+
+Exit codes are meant for scripting: **0** all good, **1** some frames failed,
+**2** nothing to convert, **3** bad arguments.
+
+`--config` refuses an ambiguous match rather than guessing — quietly picking one of
+several configs is exactly how the wrong curve ships.
+
+---
+
 ## Keyboard
 
 Press **?** in either window for the full list, or open the **⚙** in the converter's
@@ -284,6 +345,7 @@ interface.
 | `Ctrl` `↵` | Convert |
 | `Esc` | Cancel a running convert |
 | `E` | Eyedropper — click a pixel to lock and copy its hex |
+| `,` `.` | Previous / next frame of a sequence |
 | `Ctrl` + click | Add the object under the cursor to the matte |
 | `Alt` + click | Remove it again |
 | `←` `→` | Resize the preview (with the divider focused) |

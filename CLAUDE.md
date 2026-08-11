@@ -15,6 +15,7 @@ admin.
 
 ```
 EXRtoSRGB.exe     the build, written to the repo root so it is easy to find.
+cli.py            the scriptable entry point. imports core only, never a window.
 app.ico           VISOR mark, multi-size. wired into the spec and the window.
 core.py           conversion. no UI imports. this is what the tests exercise.
 exr2srgb.py       pywebview window + the Api bridge exposed to JavaScript.
@@ -171,6 +172,42 @@ the backend died when the backend is fine.
 Two defences, keep both: private mode removes the cache, and `on(id, event, fn)`
 in `viewer.js` binds only when the element exists, with `startup()` wrapped in a
 try/catch that reports into `#vmeta`. **A missing control must never be fatal.**
+
+**`cli.py` is a real path to the pixels, not a wrapper.** It imports `core` and
+nothing else, so `tests/test_cli.py` stays inside the same no-UI boundary as
+`test_core` — and it asserts the **ACES ladder through the CLI**, because a second
+route to the same transform is exactly the thing that drifts without anything
+failing. `--config` resolves a label, a registry name, a substring or a path, and
+**refuses an ambiguous match** rather than guessing; picking one of several configs
+silently is how the wrong curve ships. `--cli` is dispatched in `main()` before the
+single-instance guard, since a farm may run several at once.
+
+`'cli'` is in the spec's `hiddenimports`: it is imported inside `main()`, so
+PyInstaller's static analysis does not see it and `--cli` would work from source
+and die with `ModuleNotFoundError` in the exe.
+
+**Presets store everything except `out_dir`.** A preset is how to convert, not
+where to put it, and a stale path following you between projects is worse than
+picking one each time. Applying one sets the config **first and awaits the colour
+lists** before input space and display — written against the previous config's
+options they are silently dropped — and ends with `syncFormat()`, which is what
+enforces the container rules on a settings blob arriving from outside.
+
+Naming is an inline input rather than a dialog: pywebview has no text prompt and
+`window.prompt` is not dependable in WebView2. Its Escape handler calls
+`stopPropagation`, or the global one reads the key as cancel-the-convert.
+
+**"Every layer" is a pass per layer, not a new code path.** `_layer_passes` builds
+one settings blob per layer with `core.layer_tag()` in the suffix — without that
+they all resolve to the same filename and only the last survives. `all_layers` is
+popped there so it never reaches `core`.
+
+**Frame stepping re-reads.** The sequence strip steps rather than plays because one
+preview frame is 125 ms at 1080p and 860 ms on an 80-channel file, and that is
+decode cost — halving the preview barely moves it. The held frame resets when the
+selection lands on a different entry, compared **by label, not index**: adding a
+file can leave the selection on the same row number while that row is now a
+different sequence.
 
 **Single instance is the converter only.** `claim_single_instance()` is called in
 `main()` **after** the `--view` and `--convert` early returns, and that ordering is

@@ -807,6 +807,9 @@ class Api:
             "transfer": s.get("transfer", "display"),
             "out_dir": s["out_dir"] or None,
             "suffix": s["suffix"],
+            # Consumed by _layer_passes and popped there, so it never reaches
+            # core - which would reject an unknown key on a settings blob.
+            "all_layers": bool(s.get("all_layers")),
         }
 
     # -- lifecycle --------------------------------------------------------
@@ -845,6 +848,39 @@ class Api:
         log line never ran either.
         """
         return set_clipboard(str(text))
+
+    # -- presets ----------------------------------------------------------
+    #
+    # A studio uses one combination of config, display, format and bit depth for
+    # months at a time, and re-picking it every launch is the sort of friction
+    # that ends in someone shipping the wrong curve. Stored with the other
+    # preferences, so there is one file to back up and no new format.
+
+    def presets(self):
+        """Saved settings blobs, newest name order preserved."""
+        saved = load_prefs().get("presets") or {}
+        return {"names": sorted(saved.keys()), "presets": saved}
+
+    def save_preset(self, name, s):
+        name = str(name).strip()
+        if not name:
+            return {"ok": False, "error": "a preset needs a name"}
+        saved = load_prefs().get("presets") or {}
+        # Deliberately not storing out_dir: a preset is how to convert, not
+        # where to put it, and carrying a stale path across projects is worse
+        # than re-picking one.
+        blob = {k: v for k, v in dict(s).items() if k != "out_dir"}
+        saved[name] = blob
+        save_prefs({"presets": saved})
+        self._js("onLog", "Saved preset %s." % name, "ok")
+        return {"ok": True, "names": sorted(saved.keys())}
+
+    def delete_preset(self, name):
+        saved = load_prefs().get("presets") or {}
+        if str(name) in saved:
+            del saved[str(name)]
+            save_prefs({"presets": saved})
+        return {"ok": True, "names": sorted(saved.keys())}
 
     def config_list(self):
         configs = [{"value": name, "label": label}
@@ -1198,8 +1234,37 @@ class Api:
         self.worker.start()
         return True
 
+    def _layer_passes(self, files, settings):
+        """
+        The (layer, settings) pairs to run.
+
+        One pass normally. With "every layer" ticked, one pass per layer of the
+        first file, each carrying the layer in its suffix - without that they
+        all resolve to the same filename and only the last survives. The layer
+        list comes from the first file because a sequence shares its layers;
+        anything missing one reports per file rather than silently falling back.
+        """
+        if not settings.pop("all_layers", False):
+            return [settings]
+        try:
+            layers = core.probe_layers(files[0]) or [None]
+        except Exception:
+            return [settings]
+        if len(layers) < 2:
+            return [settings]
+        passes = []
+        for layer in layers:
+            s = dict(settings)
+            s["layer"] = layer
+            s["suffix"] = core.layer_tag(layer) + settings.get("suffix", "")
+            passes.append(s)
+        self._js("onLog", "Converting %d layers, one file each." % len(layers),
+                 "dim")
+        return passes
+
     def _run(self, files, settings):
-        total = len(files)
+        passes = self._layer_passes(files, settings)
+        total = len(files) * len(passes)
         counts = {"ok": 0, "fail": 0, "warned": 0, "done": 0}
 
         def on_result(i, path, out, info, err):
@@ -1220,9 +1285,12 @@ class Api:
             self._js("onProgress", counts["done"], total)
 
         try:
-            core.convert_many(files, settings,
-                              on_result=on_result,
-                              should_stop=self.cancel_flag.is_set)
+            for s in passes:
+                if self.cancel_flag.is_set():
+                    break
+                core.convert_many(files, s,
+                                  on_result=on_result,
+                                  should_stop=self.cancel_flag.is_set)
         except Exception as e:
             self._js("onLog", "Batch failed: %s" % e, "err")
             self._js("onLog", traceback.format_exc().splitlines()[-1], "dim")
@@ -1294,6 +1362,13 @@ def attach_dnd(window, api):
 
 def main():
     argv = sys.argv[1:]
+
+    # `--cli ...`: the scriptable entry point. First, and before the single
+    # instance guard, because a farm may run several at once and none of them
+    # want a window.
+    if "--cli" in argv:
+        import cli
+        return sys.exit(cli.main([a for a in argv if a != "--cli"]))
 
     # `--convert <fmt> --bits N --transfer T <path>`: the right-click verbs.
     # Headless - it writes the file and exits without ever creating a window.

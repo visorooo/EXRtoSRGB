@@ -18,7 +18,10 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('ui', 'ui'), ('app.ico', '.'), ('exr.ico', '.')]
 binaries = []
-hiddenimports = ['webview.platforms.winforms', 'clr_loader']
+# 'cli' is imported inside main() rather than at module scope, so PyInstaller's
+# static analysis does not see it and --cli would die with ModuleNotFoundError
+# in the exe while working perfectly from source.
+hiddenimports = ['webview.platforms.winforms', 'clr_loader', 'cli']
 
 for pkg in ('OpenImageIO', 'PyOpenColorIO', 'webview'):
     d, b, h = collect_all(pkg)

@@ -122,6 +122,25 @@
               <button class="tab" id="tab-crypto" hidden>Cryptomatte</button>
               <span class="spacer"></span>
               <span class="sub" id="crypto-count"></span>
+              <!--
+                One combination gets used for months at a time, so re-picking it
+                every launch is friction that ends in the wrong curve shipping.
+              -->
+              <select autocomplete="off" id="preset" title="Saved settings">
+                <option value="">Presets…</option>
+              </select>
+              <!--
+                Naming happens inline rather than in a dialog: pywebview has no
+                text prompt, and window.prompt is not dependable in WebView2.
+              -->
+              <input type="text" id="preset-name" class="preset-name" hidden
+                     autocomplete="off" placeholder="Preset name — Enter to save"
+                     maxlength="40" />
+              <button class="ghost" id="preset-save" title="Save current settings as a preset">
+                Save
+              </button>
+              <button class="ghost" id="preset-del" title="Delete the selected preset"
+                      disabled>×</button>
             </div>
             <div class="settings wide" id="body-output">
               <div class="field span2">
@@ -176,6 +195,16 @@
               <div class="field span2">
                 <label class="lbl" for="layer">Layer</label>
                 <select autocomplete="off" id="layer"></select>
+                <!--
+                  The grouping already knows every layer, so writing one file
+                  per AOV costs a pass rather than new machinery. Each output is
+                  named for its layer, or they would all land on one filename.
+                -->
+                <label class="check" id="all-layers-wrap">
+                  <input autocomplete="off" type="checkbox" id="all-layers" />
+                  <span class="box"></span>
+                  <span>Convert every layer, one file each</span>
+                </label>
               </div>
               <div class="field">
                 <label class="lbl" for="alpha">Alpha</label>
@@ -456,6 +485,7 @@
 
                 <div class="grp">Preview</div>
                 <dt>E</dt><dd>Eyedropper — click a pixel to lock and copy it</dd>
+                <dt>, .</dt><dd>Previous / next frame of a sequence</dd>
                 <dt>Ctrl + click</dt><dd>Add the object under the cursor</dd>
                 <dt>Alt + click</dt><dd>Remove it again</dd>
                 <dt>Drag divider</dt><dd>Resize the preview</dd>
