@@ -117,6 +117,14 @@
   --danger: var(--red-600);
   --danger-soft: var(--red-tint);
 
+  /* Channel tints for the pixel probe. Desaturated well below pure RGB: at
+     11px a saturated green on a light panel is thin and a saturated blue is
+     nearly unreadable, and the three only have to be told apart from each
+     other, not shouted. */
+  --chan-r: #b3261e;
+  --chan-g: #1e6b33;
+  --chan-b: #1f45c4;
+
   /* Inverted pair for solid buttons, so they stay legible in both themes
      without a second rule. */
   --primary: var(--warm-900);
@@ -145,6 +153,11 @@
   --warn-soft: var(--amber-shade);
   --danger: var(--red-400);
   --danger-soft: var(--red-shade);
+
+  /* Lifted for the dark panel - the light-theme tints sit at about 2:1 here. */
+  --chan-r: #ff8a80;
+  --chan-g: #7ddc93;
+  --chan-b: #8fb4ff;
 
   --primary: var(--warm-50);
   --primary-ink: var(--warm-900);

@@ -214,6 +214,11 @@
   align-items: center;
   gap: 1px;
   white-space: nowrap;
+  /* The row must never widen the window's min-content width: it used to, and
+     the toolbar above it visibly reflowed as the cursor moved over the image.
+     Every value is padded to a fixed width too - see paintProbe. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .vprobe .vlabel {
@@ -221,6 +226,18 @@
   margin-left: 7px;
   margin-right: 2px;
 }
+
+/* Channel-coded values. The numbers carry the colour rather than a separate
+   R/G/B letter: the row is already dense, and a tinted number is read as its
+   channel without costing three more glyphs per triplet. */
+.vprobe .ch-r { color: var(--chan-r); }
+.vprobe .ch-g { color: var(--chan-g); }
+.vprobe .ch-b { color: var(--chan-b); }
+
+/* Linear values lag the cursor by one bridge round-trip. Dimming them while
+   they are the previous pixel's is the honest signal - the alternative is
+   presenting a stale number as current. */
+.vprobe.waiting .ch { opacity: 0.55; }
 
 .vzoom {
   min-width: 5ch;

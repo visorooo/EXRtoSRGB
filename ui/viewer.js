@@ -378,6 +378,10 @@ async function render(refit = false) {
 function wire() {
   const stage = $('vstage');
 
+  // Keep the probe's copy of the frame in step with what is on screen, or the
+  // instant readings come off the previous exposure, layer or channel.
+  $('vimg').addEventListener('load', drawProbeCanvas);
+
   // pan
   let panning = false;
   let sx = 0;
@@ -656,6 +660,15 @@ async function runConvert(preset) {
 }
 
 let probeTimer = null;
+// The rendered frame, kept as pixels so the readout can track the cursor
+// without a bridge call. See sampleRendered.
+const probeCanvas = document.createElement('canvas');
+let probeCtx = null;
+let probeBusy = false;
+let probePending = null;
+// The merged reading: display values arrive instantly from the canvas, linear
+// ones a round-trip later, and both are shown together.
+let probeShown = null;
 let lastHex = null;
 // picking: armed and waiting for a click. locked: a reading is being held.
 let picking = false;
@@ -710,39 +723,73 @@ async function copyWithFeedback(text, el) {
   copiedTimer = setTimeout(() => el.classList.remove('copied'), 1100);
 }
 
-function paintProbe(p) {
+/*
+ * Render the readout.
+ *
+ * `partial` marks a canvas sample: it carries the display values but no linear
+ * ones, so it merges over the previous reading rather than replacing it, and
+ * the linear numbers are dimmed until the exact answer lands. Showing the old
+ * pixel's linear values as though they were current is the one thing a probe
+ * must not do.
+ *
+ * Every number is padded to a fixed width. Unpadded, `4 3 3` and `189 146 104`
+ * differ by six characters, and the whole bar - including the toolbar above -
+ * reflowed as the cursor moved across the image.
+ */
+function paintProbe(p, partial = false) {
+  probeShown = partial && probeShown ? { ...probeShown, ...p, stale: true }
+    : { ...p, stale: false };
+  const s = probeShown;
   const el = $('vprobe');
   const f4 = (v) => v.toFixed(4);
-  const lin = [f4(p.r), f4(p.g), f4(p.b)];
+  const has = s.r !== undefined;
+  const lin = has ? [f4(s.r), f4(s.g), f4(s.b)] : ['', '', ''];
   el.textContent = '';
   const add = (node) => el.appendChild(node);
   const label = (t) => {
-    const s = document.createElement('span');
-    s.className = 'probe-label vlabel';
-    s.textContent = t;
-    return s;
+    const span = document.createElement('span');
+    span.className = 'probe-label vlabel';
+    span.textContent = t;
+    return span;
   };
-  add(copyable(`${p.x},${p.y}`, 'Pixel coordinate'));
+  const chan = (node, which) => {
+    node.classList.add('ch', `ch-${which}`);
+    return node;
+  };
+  const pad = (node, w) => {
+    node.style.minWidth = `${w}ch`;
+    return node;
+  };
+
+  add(pad(copyable(`${s.x},${s.y}`, 'Pixel coordinate'), 9));
   add(label('lin'));
-  add(copyable(lin[0], 'Red, linear'));
-  add(copyable(lin[1], 'Green, linear'));
-  add(copyable(lin[2], 'Blue, linear'));
-  add(copyable(lin.join(' '), 'All three, linear'));
-  if (p.dr !== undefined) {
+  if (has) {
+    add(chan(pad(copyable(lin[0], 'Red, linear'), 6), 'r'));
+    add(chan(pad(copyable(lin[1], 'Green, linear'), 6), 'g'));
+    add(chan(pad(copyable(lin[2], 'Blue, linear'), 6), 'b'));
+    add(pad(copyable(lin.join(' '), 'All three, linear'), 20));
+  }
+  if (s.dr !== undefined) {
     add(label('disp'));
-    add(copyable([p.dr, p.dg, p.db].join(' '), 'RGB, 8-bit display'));
+    const d = [s.dr, s.dg, s.db].map((v) => String(v).padStart(3, ' '));
+    add(chan(pad(copyable(d[0], 'Red, 8-bit display'), 3), 'r'));
+    add(chan(pad(copyable(d[1], 'Green, 8-bit display'), 3), 'g'));
+    add(chan(pad(copyable(d[2], 'Blue, 8-bit display'), 3), 'b'));
+    add(pad(copyable(d.join(' '), 'RGB, 8-bit display'), 11));
   }
   add(label('a'));
-  add(copyable(p.a === null || p.a === undefined ? '—' : p.a.toFixed(4), 'Alpha'));
-  if (p.hex) add(copyable(p.hex, 'Display colour'));
+  add(pad(copyable(s.a === null || s.a === undefined ? '—' : s.a.toFixed(4),
+                   'Alpha'), 6));
+  if (s.hex) add(pad(copyable(s.hex, 'Display colour'), 7));
+  el.classList.toggle('waiting', Boolean(s.stale));
 
-  if (!p.hex) return;
+  if (!s.hex) return;
   const sw = $('vswatch');
   sw.hidden = false;
   // alpha kept on the chip so a soft edge does not read as solid colour
-  const al = p.a === null || p.a === undefined ? 1 : Math.min(1, Math.max(0, p.a));
-  sw.style.setProperty('--swatch', `rgb(${p.dr} ${p.dg} ${p.db} / ${al})`);
-  lastHex = p.hex;
+  const al = s.a === null || s.a === undefined ? 1 : Math.min(1, Math.max(0, s.a));
+  sw.style.setProperty('--swatch', `rgb(${s.dr} ${s.dg} ${s.db} / ${al})`);
+  lastHex = s.hex;
 }
 
 function uvAt(e) {
@@ -754,18 +801,84 @@ function uvAt(e) {
   return u < 0 || u > 1 || v < 0 || v > 1 ? null : [u, v];
 }
 
+/*
+ * Read the displayed pixel straight out of the rendered image.
+ *
+ * The bridge round-trip is what made the readout lag the cursor; the pixel the
+ * user is pointing at is already in the page, so the display values, the hex
+ * and the swatch need not wait for Python at all.
+ *
+ * These come off the *render*, which is capped in resolution, so above that cap
+ * they are a resampled neighbourhood rather than the exact source pixel. Python
+ * still answers with the true one and overwrites them - identical at 1:1 and for
+ * anything at or below the render size, marginally different when zoomed out,
+ * which is the right trade for a reading that tracks the cursor.
+ */
+function sampleRendered(uv) {
+  if (!probeCtx || !V.imgW) return null;
+  const x = Math.min(V.imgW - 1, Math.max(0, Math.floor(uv[0] * V.imgW)));
+  const y = Math.min(V.imgH - 1, Math.max(0, Math.floor(uv[1] * V.imgH)));
+  let d;
+  try {
+    d = probeCtx.getImageData(x, y, 1, 1).data;
+  } catch (err) {
+    return null;
+  }
+  const hex = '#' + [d[0], d[1], d[2]]
+    .map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+  return {
+    x: Math.min(V.fullW - 1, Math.floor(uv[0] * V.fullW)),
+    y: Math.min(V.fullH - 1, Math.floor(uv[1] * V.fullH)),
+    dr: d[0], dg: d[1], db: d[2], hex,
+  };
+}
+
+function drawProbeCanvas() {
+  const img = $('vimg');
+  if (!img.naturalWidth) return;
+  probeCanvas.width = img.naturalWidth;
+  probeCanvas.height = img.naturalHeight;
+  probeCtx = probeCanvas.getContext('2d', { willReadFrequently: true });
+  probeCtx.drawImage(img, 0, 0);
+}
+
+/*
+ * One request in flight, always for the newest position.
+ *
+ * The old code debounced 35ms and then awaited, so a moving cursor queued a
+ * chain of stale requests behind the current one. Coalescing keeps the reading
+ * one round-trip behind the cursor instead of N.
+ */
+function requestExact(uv) {
+  probePending = uv;
+  if (probeBusy) return;
+  probeBusy = true;
+  (async () => {
+    while (probePending && !locked) {
+      const [u, v] = probePending;
+      probePending = null;
+      try {
+        const p = await window.pywebview.api.probe(u, v, V.exposure, V.gamma);
+        if (p && p.r !== undefined && !locked) paintProbe(p);
+      } catch (err) {
+        break;
+      }
+    }
+    probeBusy = false;
+  })();
+}
+
 function probeAt(e) {
   if (locked) return;
   const uv = uvAt(e);
   if (!uv) {
     $('vprobe').textContent = '';
+    probeShown = null;
     return;
   }
-  clearTimeout(probeTimer);
-  probeTimer = setTimeout(async () => {
-    const p = await window.pywebview.api.probe(uv[0], uv[1], V.exposure, V.gamma);
-    if (p && p.r !== undefined && !locked) paintProbe(p);
-  }, 35);
+  const quick = sampleRendered(uv);
+  if (quick) paintProbe(quick, true);
+  requestExact(uv);
 }
 
 /*
