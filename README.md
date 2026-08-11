@@ -79,7 +79,11 @@ Run `EXRtoSRGB_Setup_v<version>.exe`. It installs like any other application:
 - **Appears in Add/Remove Programs**, with a Start menu entry and a working
   uninstaller that takes the file association and right-click menu with it.
 - **Offers to open `.exr` files** and to add the right-click convert menu, both
-  ticked by default and both changeable later under the **⚙**.
+  ticked by default and both changeable later under the **⚙**. If another
+  application already owns `.exr`, setup opens the page where you can hand it
+  over — Settings → Default apps on Windows 11, the "Open with" chooser on
+  Windows 10. Only you can set a default file handler on Windows; an installer
+  cannot do it silently, whatever it claims.
 - **Upgrades in place.** The app lives at a fixed path, so the association keeps
   working across versions.
 
@@ -241,16 +245,27 @@ than shipping.
 
 ## Viewer
 
-**Double-click any `.exr` and it opens.** Enable **Open .exr files with this viewer**
-under the **⚙** in the title bar. The association is per-user, needs no admin rights,
-and unticking hands the file type back.
+**Double-click any `.exr` and it opens.** The installer offers this, or tick
+**Open .exr files with this viewer** under the **⚙** in the title bar. The
+association is per-user, needs no admin rights, and unticking hands the file type
+back.
 
 `.exr` files also get their own aperture icon, distinct from the app's, so a file and
 the app that opens it don't look identical in Explorer.
 
-> If Windows is opening `.exr` with something else, tick the toggle once — that
-> clears the default Windows recorded when an app was picked by hand in "Open
-> with", which otherwise silently outranks this.
+> **If Photoshop, After Effects or another viewer already owns `.exr`,** Windows
+> will not let any application take it — the default for a file type can only be
+> set by you. Ticking the toggle opens the right page for your Windows:
+>
+> - **Windows 11** — Settings → Apps → Default apps, at the **EXR → sRGB** entry.
+>   Set `.exr` there. (Windows 11 removed the ability for apps to show the old
+>   one-click chooser; it now answers with a message pointing at Settings.)
+> - **Windows 10** — the **"How do you want to open this?"** dialog. Pick
+>   **EXR → sRGB**.
+>
+> The toggle reports what Windows actually resolves `.exr` to, not what the app
+> asked for — so if it reads off after you ticked it, the default really is
+> somewhere else.
 
 The window opens **centred and sized to the image**, up to 1:1, capped to your screen.
 Move or resize it and that's remembered.

@@ -89,9 +89,28 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"; Tasks: desktopic
 ; The app owns the registration, so the installer calls it rather than writing
 ; a second copy of those registry keys in Pascal that then drifts from the
 ; Python one. Nothing here is elevated, so it lands in the right HKCU hive.
-Filename: "{app}\{#ExeName}"; Parameters: "--register"; \
+Filename: "{app}\{#ExeName}"; Parameters: "--register assoc"; \
     StatusMsg: "Registering .exr..."; Flags: runhidden waituntilterminated; \
     Tasks: assoc
+
+; Its own entry, gated on its own task. Until 3.1 both registrations rode on
+; the assoc checkbox, so ticking only the right-click menu did nothing at all
+; and ticking only the association installed the menu as well.
+Filename: "{app}\{#ExeName}"; Parameters: "--register context"; \
+    StatusMsg: "Adding the right-click menu..."; \
+    Flags: runhidden waituntilterminated; Tasks: context
+
+; Registering is not the same as becoming the default, and on any machine with
+; Photoshop, After Effects or another EXR viewer on it the registration above
+; is outranked and completely inert. Since Windows 8 the default handler is
+; `UserChoice`, whose hash is signed per user - no installer can write it, and
+; a forged one makes Windows drop the association altogether. The only way is
+; Windows' own "How do you want to open this?" dialog, so it is shown once,
+; here, while the user is already thinking about it. Not runhidden: it IS a
+; window. Skipped silently if .exr already resolves to us.
+Filename: "{app}\{#ExeName}"; Parameters: "--choose-default"; \
+    StatusMsg: "Setting EXR to sRGB as the default for .exr..."; \
+    Flags: waituntilterminated; Tasks: assoc
 
 Filename: "{app}\{#ExeName}"; Description: "Launch {#AppName}"; \
     Flags: nowait postinstall skipifsilent

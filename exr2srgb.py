@@ -22,6 +22,7 @@ Build a standalone .exe on Windows:
 import os
 import re
 import sys
+import tempfile
 import threading
 import traceback
 
@@ -31,7 +32,7 @@ from webview.dom import DOMEventHandler
 import core
 
 APP_NAME = "EXR → sRGB"
-VERSION = "3.1.0"
+VERSION = "3.1.1"
 
 # _MEIPASS only exists in a frozen build; from source this is the repo folder.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +95,16 @@ def save_prefs(update):
 # ----------------------------------------------------------------------------
 
 PROG_ID = "VISOR.EXRtoSRGB.exr"
+# The name Windows shows in "Open with" and in Settings > Default apps, and the
+# key that page reads our capabilities from. Both are part of being *choosable*
+# as a default rather than merely registered - see choose_default.
+APP_NAME = "EXR to sRGB"
+CAPABILITIES_KEY = r"Software\VISOR\EXRtoSRGB\Capabilities"
+
+
+def _exe_path():
+    """The executable Windows would run for us - the frozen exe, or python."""
+    return sys.executable
 
 
 def _exe_command():
@@ -499,27 +510,153 @@ def _clear_user_choice():
             if nuke("%s\\%s" % (FILEEXTS, sub))]
 
 
+def effective_handler():
+    """
+    The exe Windows would actually run for a .exr, straight from the shell.
+
+    `AssocQueryString` is the API Explorer resolves a double-click through, so
+    it is the only answer that counts. Reading our own registry keys back tells
+    you what we wrote, which is a different question and was the reason the
+    toggle read "on" while double-click opened Photoshop - see the note in
+    CLAUDE.md. Returns a full path, or None if Windows would show the
+    "How do you want to open this?" chooser instead.
+    """
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    ASSOCF_NOFIXUPS = 0x40
+    ASSOCSTR_EXECUTABLE = 2
+    fn = ctypes.windll.shlwapi.AssocQueryStringW
+    fn.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.LPCWSTR,
+                   wintypes.LPCWSTR, wintypes.LPWSTR,
+                   ctypes.POINTER(wintypes.DWORD)]
+    fn.restype = wintypes.LONG
+    n = wintypes.DWORD(1024)
+    buf = ctypes.create_unicode_buffer(1024)
+    if fn(ASSOCF_NOFIXUPS, ASSOCSTR_EXECUTABLE, ".exr", None, buf, ctypes.byref(n)):
+        return None
+    path = buf.value
+    # The chooser itself is not a handler; reporting it as one would make the
+    # toggle claim some application owns .exr when nothing does.
+    if os.path.basename(path).lower() == "openwith.exe":
+        return None
+    return path
+
+
 def association_state():
     """
     Is .exr currently pointing at us? Returns (associated, current_handler).
 
-    A UserChoice outranks the class registration, so it is checked first -
-    otherwise the toggle reports the state it wrote rather than the state the
-    system is in, which is a checkbox that lies.
+    Asks the shell rather than reading back our own keys. Writing
+    `HKCU\\Software\\Classes\\.exr` is necessary but *not sufficient*: when
+    another application already owns .exr machine-wide, Windows does not treat
+    a per-user class registration as a default, and the only per-user override
+    it honours is a UserChoice - which is hash-signed and cannot be written by
+    us. So the honest state is whatever `effective_handler` says.
     """
     if os.name != "nt":
         return False, None
-    import winreg
-    chosen = _user_choice()
-    if chosen:
-        return chosen == PROG_ID, chosen
+    handler = effective_handler()
+    if handler:
+        mine = os.path.normcase(os.path.abspath(handler)) == \
+            os.path.normcase(os.path.abspath(_exe_path()))
+        return mine, handler
+    return False, _user_choice()
+
+
+def _sample_exr():
+    """
+    Some real .exr on disk, for the "Open with" dialog to be about.
+
+    `SHOpenWithDialog` takes a file, not an extension. The installer ships one
+    next to the exe; from source it is in docs/. If neither is there a 1x1 is
+    written to the temp folder - the dialog only ever looks at the suffix.
+    """
+    for candidate in (os.path.join(BASE_DIR, "sample", "sample_render.exr"),
+                      os.path.join(BASE_DIR, "docs", "sample_render.exr")):
+        if os.path.exists(candidate):
+            return candidate
+    tmp = os.path.join(tempfile.gettempdir(), "EXRtoSRGB-associate.exr")
+    if not os.path.exists(tmp):
+        import numpy as np
+        import OpenImageIO as oiio
+        spec = oiio.ImageSpec(1, 1, 3, "half")
+        out = oiio.ImageOutput.create(tmp)
+        out.open(tmp, spec)
+        out.write_image(np.zeros((1, 1, 3), dtype="float32"))
+        out.close()
+    return tmp
+
+
+def _is_windows_11():
+    """Build 22000 is the 10-to-11 boundary; the association UI changed there."""
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Classes\.exr") as k:
-            current = winreg.QueryValueEx(k, "")[0]
-    except OSError:
-        return False, None
-    return current == PROG_ID, current
+        return sys.getwindowsversion().build >= 22000
+    except Exception:                               # noqa: BLE001
+        return False
+
+
+def choose_default(hwnd=0):
+    """
+    Hand the user to whichever UI their Windows lets set a default.
+
+    Since Windows 8 the default handler for an extension is `UserChoice`, and
+    the Hash beside it is signed per user. No application can write it, and one
+    written without a valid hash makes Windows discard the association
+    entirely. Writing HKCU\\Software\\Classes\\.exr is enough only while nothing
+    else claims .exr; the moment Photoshop, After Effects or another viewer has
+    registered it machine-wide, our registration is outranked and inert. That
+    is why the installer's checkbox appeared to do nothing.
+
+    **On Windows 11 `SHOpenWithDialog` no longer sets defaults.** Called with
+    `OAIF_FORCE_REGISTRATION` it puts up a message box reading "To change your
+    default apps, go to Settings > Apps > Default apps" and returns - measured,
+    not assumed. So 11 gets the Settings page, deep-linked to our entry, which
+    is why `set_association` bothers to write Capabilities and
+    RegisteredApplications: without them that page has no row to land on.
+
+    Windows 10 keeps the dialog, which is one click instead of four.
+
+    Returns True if .exr ends up pointing at us - which on Windows 11 it will
+    not yet, because the user is still in Settings when this returns.
+    """
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    if _is_windows_11():
+        # The deep link needs the name exactly as RegisteredApplications has
+        # it. Falls back to the page itself, where .exr is searchable.
+        try:
+            os.startfile("ms-settings:defaultapps?registeredAppUser=%s"
+                         % APP_NAME)
+        except OSError:
+            try:
+                os.startfile("ms-settings:defaultapps")
+            except OSError:
+                return False
+        return association_state()[0]
+
+    class OPENASINFO(ctypes.Structure):
+        _fields_ = [("pcszFile", wintypes.LPCWSTR),
+                    ("pcszClass", wintypes.LPCWSTR),
+                    ("oaifInFlags", ctypes.c_int)]
+
+    OAIF_ALLOW_REGISTRATION = 0x01
+    OAIF_REGISTER_EXT = 0x02
+    OAIF_FORCE_REGISTRATION = 0x08
+    # No OAIF_EXEC: this is about setting the default, not opening the file.
+    info = OPENASINFO(_sample_exr(), None,
+                      OAIF_ALLOW_REGISTRATION | OAIF_REGISTER_EXT
+                      | OAIF_FORCE_REGISTRATION)
+    fn = ctypes.windll.shell32.SHOpenWithDialog
+    fn.argtypes = [wintypes.HWND, ctypes.POINTER(OPENASINFO)]
+    fn.restype = wintypes.LONG
+    fn(hwnd, ctypes.byref(info))
+    refresh_shell()
+    return association_state()[0]
 
 
 def repair_association():
@@ -539,8 +676,17 @@ def repair_association():
     if os.name != "nt":
         return False
     import winreg
-    associated, _ = association_state()
-    if not associated:
+    # Gated on our registration existing, not on our being the current default.
+    # Those came apart in 3.1.1 when association_state started asking the shell:
+    # on a machine where Photoshop owns .exr we are registered but not default,
+    # and that is exactly when the recorded path most needs to be right - it is
+    # what the user is about to pick in the "Open with" dialog.
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Classes\.exr") as k:
+            if winreg.QueryValueEx(k, "")[0] != PROG_ID:
+                return False
+    except OSError:
         return False
     key = r"Software\Classes\%s\shell\open\command" % PROG_ID
     try:
@@ -592,6 +738,36 @@ def set_association(enable):
                     winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "")
         except OSError:
             pass
+        # Take the "choosable" half back out too, or the app keeps a row in
+        # Settings > Default apps and a line in "Open with" after uninstall.
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Classes\.exr\OpenWithProgids", 0,
+                                winreg.KEY_ALL_ACCESS) as k:
+                winreg.DeleteValue(k, PROG_ID)
+        except OSError:
+            pass
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\RegisteredApplications", 0,
+                                winreg.KEY_ALL_ACCESS) as k:
+                winreg.DeleteValue(k, APP_NAME)
+        except OSError:
+            pass
+        app_key = r"Software\Classes\Applications\%s" % \
+            os.path.basename(_exe_path())
+        for path in (CAPABILITIES_KEY + r"\FileAssociations",
+                     CAPABILITIES_KEY,
+                     r"Software\VISOR\EXRtoSRGB",
+                     app_key + r"\shell\open\command",
+                     app_key + r"\shell\open",
+                     app_key + r"\shell",
+                     app_key + r"\SupportedTypes",
+                     app_key):
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
+            except OSError:
+                pass
         refresh_shell()
         return False
 
@@ -611,6 +787,46 @@ def set_association(enable):
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
                           r"Software\Classes\.exr") as k:
         winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
+
+    # Everything below is what makes us *choosable* rather than merely
+    # registered. Without it the app is not offered in Settings > Default apps
+    # at all, and shows up in "Open with" as the bare filename - which is what
+    # the user has to click, since on Windows 11 they are the only one who can
+    # actually set the default. See choose_default.
+    #
+    # OpenWithProgids: puts us in the "Open with" list for .exr without
+    # claiming the type. Additive, and the one piece that is safe whether or
+    # not we end up as the default.
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          r"Software\Classes\.exr\OpenWithProgids") as k:
+        winreg.SetValueEx(k, PROG_ID, 0, winreg.REG_NONE, b"")
+
+    # Applications\<exe>: the friendly name and the types we handle, so the
+    # chooser says "EXR to sRGB" rather than "EXRtoSRGB.exe".
+    app_key = r"Software\Classes\Applications\%s" % os.path.basename(_exe_path())
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, app_key) as k:
+        winreg.SetValueEx(k, "FriendlyAppName", 0, winreg.REG_SZ, APP_NAME)
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          app_key + r"\SupportedTypes") as k:
+        winreg.SetValueEx(k, ".exr", 0, winreg.REG_SZ, "")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          app_key + r"\shell\open\command") as k:
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, _exe_command())
+
+    # Capabilities + RegisteredApplications: how an application declares itself
+    # to Settings > Default apps. Without this entry the Settings page has no
+    # row for us, so there is nowhere for the user to pick us even though the
+    # class registration is perfect.
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, CAPABILITIES_KEY) as k:
+        winreg.SetValueEx(k, "ApplicationName", 0, winreg.REG_SZ, APP_NAME)
+        winreg.SetValueEx(k, "ApplicationDescription", 0, winreg.REG_SZ,
+                          "View and convert ACES-linear EXR renders.")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          CAPABILITIES_KEY + r"\FileAssociations") as k:
+        winreg.SetValueEx(k, ".exr", 0, winreg.REG_SZ, PROG_ID)
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                          r"Software\RegisteredApplications") as k:
+        winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, CAPABILITIES_KEY)
 
     # Last, and load-bearing: whatever Windows recorded when a default was
     # picked by hand sits in front of everything above. Without clearing it the
@@ -1309,12 +1525,33 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def set_association(self, enable):
+        """
+        Register, then verify with the shell rather than with our own keys.
+
+        `set_association` writes everything it can, but on a machine where
+        another application already owns .exr that registration is outranked
+        and does nothing. Only Windows' own chooser can move the default, so
+        when the shell still names someone else the dialog is offered instead
+        of reporting a success that the next double-click contradicts.
+        """
         try:
-            state = set_association(bool(enable))
-            self._js("onLog",
-                     "EXR files now open in this viewer." if state
-                     else "Removed the .exr association.", "ok")
-            return {"ok": True, "associated": state}
+            set_association(bool(enable))
+            if not enable:
+                self._js("onLog", "Removed the .exr association.", "ok")
+                return {"ok": True, "associated": False}
+            done, handler = association_state()
+            if done:
+                self._js("onLog", "EXR files now open in this viewer.", "ok")
+                return {"ok": True, "associated": True}
+            done = choose_default()
+            if done:
+                self._js("onLog", "EXR files now open in this viewer.", "ok")
+            else:
+                who = os.path.basename(handler) if handler else "another app"
+                self._js("onLog",
+                         "Windows still opens .exr with %s. Pick EXR to sRGB in "
+                         "the dialog to change it." % who, "warn")
+            return {"ok": True, "associated": done}
         except Exception as e:
             self._js("onLog", "Could not change file association: %s" % e, "err")
             return {"ok": False, "error": str(e)}
@@ -1732,16 +1969,35 @@ def main():
             print("first verb : <%s>" % e.__class__.__name__)
         return sys.exit(0)
 
+    # `--choose-default`: what the installer runs after `--register`, and it is
+    # a separate step because it is the only one that puts a window on screen.
+    # Registering is silent and always safe; making ourselves the *default* can
+    # only be done by the user clicking in Windows' own dialog, so it is asked
+    # once at install time rather than never.
+    if "--choose-default" in argv:
+        if association_state()[0]:
+            print("already the default for .exr")
+            return sys.exit(0)
+        return sys.exit(0 if choose_default() else 1)
+
     if "--register" in argv or "--unregister" in argv:
         on = "--register" in argv
         word = "registered" if on else "unregistered"
         failures = []
+        # `--register assoc` / `--register context` select one part, so the
+        # installer's two checkboxes are actually independent. Naming neither
+        # does both, which is what uninstall wants and what the flag used to
+        # mean on its own.
+        wanted = [w for w in ("assoc", "context") if w in argv] \
+            or ["assoc", "context"]
+        parts = [p for p in (("association", set_association, "assoc"),
+                             ("context menu", set_context_menu, "context"))
+                 if p[2] in wanted]
         # Reported separately. They are independent registrations, and folding
         # both into one try meant a failure in either was indistinguishable -
         # the association updated, the verbs silently did not, and the command
         # still said "registered".
-        for name, fn in (("association", set_association),
-                         ("context menu", set_context_menu)):
+        for name, fn, _key in parts:
             try:
                 fn(on)
                 print("  %s %s" % (word, name))
@@ -1751,6 +2007,12 @@ def main():
         if failures:
             return sys.exit(1)
         print("%s .exr for %s" % (word, os.environ.get("USERNAME", "this user")))
+        # Registering is not the same as being the default - see choose_default.
+        # Say so rather than letting the installer log read like a success the
+        # next double-click will contradict.
+        if on and "assoc" in wanted and not association_state()[0]:
+            print("  note: Windows still opens .exr with %s - run "
+                  "--choose-default to change it" % (association_state()[1],))
         return sys.exit(0)
 
     # `--cli ...`: the scriptable entry point. First, and before the single

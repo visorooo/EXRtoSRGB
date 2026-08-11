@@ -413,15 +413,71 @@ hides entirely when neither is supported, so there is no empty sheet off Windows
 `assoc`/`ctx` and their `-wrap` ids are unchanged, so the platform gating in
 `applyDefaults`' caller still works.
 
-**`UserChoice` beats everything the app writes.** Explorer resolves `.exr` through
-`FileExts\.exr\UserChoice` - and on Windows 11 also `UserChoiceLatest`, which
-nests the ProgID one level deeper - before it ever looks at `Software\Classes\.exr`.
-Windows writes it the moment someone picks a default by hand in "Open with". While
-the app ignored it, ticking the toggle wrote the right registration and Explorer
-carried on opening Photoshop, so the checkbox looked broken when it was the reading
-that was wrong. `association_state` consults it first, and `set_association(True)`
-deletes it - the Hash beside it is signed per user and cannot be forged, but
-deleting is allowed and Explorer then falls back to the class registration.
+**Registering `.exr` and becoming the default for `.exr` are different things,
+and the app can only do the first.** Since Windows 8 the default handler is
+`FileExts\.exr\UserChoice` - on Windows 11 also `UserChoiceLatest`, which nests
+the ProgID one level deeper - and the `Hash` beside it is signed per user. It
+cannot be forged, and a `UserChoice` written without a valid hash makes Windows
+discard the association altogether. `set_association(True)` *deletes* it, which
+is allowed, but deleting only helps when a UserChoice exists.
+
+**With no UserChoice at all, `HKCU\Software\Classes\.exr` still does not make us
+the default once another application owns the type machine-wide.** Measured on
+this machine: `HKCU\Software\Classes\.exr` = our ProgID, `HKCR\.exr` = our ProgID,
+no UserChoice anywhere - and `AssocQueryString(ASSOCSTR_EXECUTABLE, ".exr")`
+returns `Photoshop.exe`. A control extension carrying nothing but the same HKCU
+registration resolves to our exe, so the keys are well formed; `.exr` loses
+because Photoshop registered it in HKLM. An `OpenWithList` MRU was ruled out by
+experiment (it does not override), as was `RegisteredApplications` capabilities
+(nothing claims `.exr` there).
+
+So **the toggle could never have worked on a machine with Photoshop, After
+Effects or another EXR viewer installed** - which is every machine this ships to.
+It appeared to work in the past only when the user had picked the app by hand in
+"Open with", because that is what writes a real UserChoice.
+
+Two consequences the code now depends on:
+
+- **`association_state` asks the shell, not the registry.** `effective_handler`
+  calls `AssocQueryString`, the same resolution Explorer uses, and compares it to
+  `_exe_path()`. Reading back the keys we just wrote is not a check - it agrees
+  with itself no matter what Windows does, and that is exactly how a checkbox
+  reads "on" while double-click opens Photoshop. `OpenWith.exe` is mapped to
+  `None`: it means nothing owns the type, not that the chooser owns it.
+- **`choose_default()` hands the user to the UI their Windows allows, and the
+  two are not the same.** On Windows 10, `SHOpenWithDialog` with
+  `OAIF_FORCE_REGISTRATION` shows "How do you want to open this?" and the click
+  writes a valid UserChoice. **On Windows 11 that call no longer sets defaults**
+  - it puts up a message box reading *"To change your default apps, go to
+  Settings > Apps > Default apps"* and returns. Measured on build 26200, not
+  assumed; the dialog is real (`Shell_Dialog` + `Shell_Dim` windows appear) and
+  it is a dead end. So 11 gets `ms-settings:defaultapps?registeredAppUser=EXR to
+  sRGB` instead. `_is_windows_11()` splits on build 22000.
+
+  `SHOpenWithDialog` takes a *file*, not an extension, so `_sample_exr()` finds
+  the bundled `sample_render.exr` and writes a 1x1 to `%TEMP%` if it is missing -
+  no file, no dialog, and that failure looks identical to the bug.
+
+- **Being registered is not the same as being choosable.** The Settings deep
+  link lands on nothing unless the app has declared itself, so
+  `set_association(True)` also writes `Capabilities` +
+  `Software\RegisteredApplications`, `.exr\OpenWithProgids`, and
+  `Applications\<exe>` with `FriendlyAppName` and `SupportedTypes`. Without the
+  last one the chooser lists us as `EXRtoSRGB.exe`. Unregister removes all of
+  it, or the app keeps a row in Default apps after uninstall.
+
+  Watch out when running **from source**: `Applications\<exe>` keys are named
+  after `sys.executable`, so `--register` from a checkout brands
+  `Applications\python.exe` with our friendly name. `--unregister` from the same
+  checkout takes it back off.
+
+The installer runs `--choose-default` in its own `[Run]` step, not `runhidden`,
+because it is a window; `Api.set_association` falls back to it when registration
+alone leaves the shell naming someone else.
+
+`--register` takes `assoc` / `context` to select one part. Until 3.1 both rode on
+the installer's association task, so ticking only the right-click menu did
+nothing and ticking only the association installed the menu too.
 
 **The registration is repaired at startup.** The command records an absolute path
 and the filename carries the version, so every upgrade leaves it aimed at a file

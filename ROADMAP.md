@@ -299,6 +299,53 @@ integration bug looks the same from outside.
 when there is genuinely something newer. Silent on failure - a converter that
 cannot reach GitHub still converts.
 
+## Shipped — v3.1.1
+
+**Double-click on `.exr` never worked on a machine that had Photoshop.** Reported
+twice — here, and on a friend's clean install with the association box ticked. The
+registration was correct the whole time; the assumption behind it was not.
+
+Traced with the shell's own resolver rather than by reading our keys back:
+
+- `HKCU\Software\Classes\.exr` named our ProgID, `HKCR\.exr` agreed, and there was
+  no `UserChoice` anywhere — yet `AssocQueryString(ASSOCSTR_EXECUTABLE, ".exr")`
+  returned `Photoshop.exe`.
+- A control extension carrying nothing but the same registration resolved to our
+  exe, so the keys were well formed.
+- An `OpenWithList` MRU pointing elsewhere did **not** override that control, and
+  nothing claimed `.exr` through `RegisteredApplications`. By elimination, `.exr`
+  lost to Photoshop's machine-wide registration.
+
+Since Windows 8, the default handler for a file type is `UserChoice`, and the hash
+beside it is signed per user — no application can write one, and a forged one makes
+Windows discard the association entirely. **So this was never fixable the way it was
+attempted**, and it only ever appeared to work on machines where the user had picked
+the app by hand in "Open with", which is what writes a real UserChoice.
+
+What changed:
+
+- **`association_state` asks the shell.** It compares `AssocQueryString` to the
+  running exe instead of reading back what it just wrote. The old check agreed with
+  itself no matter what Windows did, which is why the toggle read "on" while
+  double-click opened Photoshop.
+- **`choose_default()`** opens whichever UI the running Windows still allows.
+  `SHOpenWithDialog` — the old one-click chooser — **no longer sets defaults on
+  Windows 11**: it answers with a message box reading "To change your default
+  apps, go to Settings > Apps > Default apps". So 11 gets that Settings page,
+  deep-linked to our entry; 10 keeps the dialog.
+- **We are now choosable, not just registered.** The Settings page needs an app
+  to have declared `Capabilities` and a `RegisteredApplications` entry, and the
+  "Open with" list needs `Applications\<exe>\FriendlyAppName` or it shows the raw
+  filename. None of that existed, so even the manual route was worse than it had
+  to be.
+- **`--register assoc|context`** selects one part. Both registrations rode on the
+  installer's association task, so ticking only the right-click menu did nothing.
+
+The honest limitation, now stated in the README: an app cannot silently take a file
+type on Windows, and the extra click is Microsoft's design, not a workaround. On
+Windows 11 it is four clicks in Settings rather than one in a dialog, and there is
+no way around that either — the one-click path was removed, not missed.
+
 ## V3.2
 
 Nothing here is a bug — v3.0 does what it set out to do. These are the four things
