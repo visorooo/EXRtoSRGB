@@ -253,9 +253,10 @@ back.
 `.exr` files also get their own aperture icon, distinct from the app's, so a file and
 the app that opens it don't look identical in Explorer.
 
-> **If Photoshop, After Effects or another viewer already owns `.exr`,** Windows
-> will not let any application take it — the default for a file type can only be
-> set by you. Ticking the toggle opens the right page for your Windows:
+> **If Photoshop, After Effects or another viewer already owns `.exr`,** ticking
+> the toggle usually still wins it — but Windows has the final say, and where it
+> refuses, only you can override it. In that case the toggle opens the right page
+> for your Windows:
 >
 > - **Windows 11** — Settings → Apps → Default apps, at the **EXR → sRGB** entry.
 >   Set `.exr` there. (Windows 11 removed the ability for apps to show the old

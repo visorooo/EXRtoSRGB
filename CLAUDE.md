@@ -436,6 +436,21 @@ Effects or another EXR viewer installed** - which is every machine this ships to
 It appeared to work in the past only when the user had picked the app by hand in
 "Open with", because that is what writes a real UserChoice.
 
+**But the cause was an incomplete registration, not a Windows policy.** Once
+`OpenWithProgids`, `Capabilities`/`RegisteredApplications` and
+`Applications\<exe>` were all present, the *same* `.exr` class default that had
+been losing to Photoshop started winning, with no UserChoice anywhere. Measured
+both ways on the same machine. Do not repeat the earlier conclusion that this
+needs a UserChoice - it needs the full registration, and the UserChoice is only
+the fallback when even that loses.
+
+That is why `set_association` writes the claim, calls the shell, and
+**withdraws it if the shell still names someone else**. A claim Explorer ignores
+is strictly worse than none: Settings reads that key to decide what to display
+as the current default, so it shows this app and greys out "Set default", and
+the user cannot fix an association the app itself broke. Ground truth over a
+rule about when the claim holds.
+
 Two consequences the code now depends on:
 
 - **`association_state` asks the shell, not the registry.** `effective_handler`

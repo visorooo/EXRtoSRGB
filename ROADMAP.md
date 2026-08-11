@@ -341,10 +341,22 @@ What changed:
 - **`--register assoc|context`** selects one part. Both registrations rode on the
   installer's association task, so ticking only the right-click menu did nothing.
 
-The honest limitation, now stated in the README: an app cannot silently take a file
-type on Windows, and the extra click is Microsoft's design, not a workaround. On
-Windows 11 it is four clicks in Settings rather than one in a dialog, and there is
-no way around that either — the one-click path was removed, not missed.
+**The registration was incomplete, not impossible.** Once `OpenWithProgids`,
+`Capabilities` and `Applications\<exe>` were all in place, the same `.exr` class
+default that had been losing to Photoshop started winning — no UserChoice, no
+Settings trip, double-click straight into the viewer with the aperture icon.
+Measured both ways on the same machine.
+
+So `set_association` now writes the claim, asks the shell whether it took, and
+withdraws it if not. A claim Explorer ignores is worse than none: Settings reads
+that key to decide what to *show* as the default, so it displays this app and
+greys out "Set default" — the user is locked out of fixing an association the app
+broke. The Settings route stays as the fallback for machines where the claim
+genuinely loses.
+
+The honest limitation, still in the README: an app cannot *force* a file type on
+Windows, and where it loses, the extra click is Microsoft's design rather than a
+workaround.
 
 ## V3.2
 
