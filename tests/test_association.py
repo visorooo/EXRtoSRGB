@@ -121,15 +121,16 @@ def test_a_foreign_user_choice_is_still_cleared(monkeypatch):
 
 
 @windows_only
-def test_a_class_claim_that_does_not_take_is_withdrawn(monkeypatch, tmp_path):
+def test_no_class_claim_when_something_else_owns_the_type(monkeypatch, tmp_path):
     """
-    Claiming .exr without winning it is worse than not claiming it.
+    Claiming .exr without durably winning it is worse than not claiming it.
 
-    Windows 11 Settings reads that key to decide what to show as the current
-    default. A claim Explorer ignores makes Settings display this app and grey
-    out "Set default" - so the user cannot fix an association the app broke.
-    `set_association` therefore checks with the shell and withdraws the claim
-    when it did not take.
+    The claim appears to work for a few minutes after SHChangeNotify and then
+    decays back to the machine-wide handler, registry unchanged. What is left
+    is a key Windows 11 Settings reads to decide what to *show* as the current
+    default: it displays this app and greys out "Set default", so the user
+    cannot fix an association the app broke. Verifying with the shell does not
+    help - the check lands inside the same window and passes.
 
     Nothing real is written: the whole winreg surface is faked, because a test
     that registers for .exr would change the machine it runs on.
@@ -161,8 +162,11 @@ def test_a_class_claim_that_does_not_take_is_withdrawn(monkeypatch, tmp_path):
                         lambda: r"C:\Program Files\Adobe\Photoshop.exe")
 
     app.set_association(True)
-    claims = [v for n, v in writes if n == "" and v in (app.PROG_ID, "")]
-    assert claims[-1] == "", "the claim must be withdrawn, not left behind"
+    assert (("", app.PROG_ID) not in writes), \
+        "must not claim .exr while another application owns it"
+    # the ProgID itself is still registered - that is what makes us choosable
+    assert any(v == app.PROG_ID for n, v in writes if n == ".exr"), \
+        "Capabilities must still advertise the ProgID for .exr"
 
 
 def test_register_flags_select_parts():

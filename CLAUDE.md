@@ -34,9 +34,9 @@ tests/test_core.py
 **Branding.** The mark's geometry is lifted from the vector paths in
 `visor.logo-principal.pdf` (VISOR brand drive → Logo), not traced from a bitmap,
 so it is exact at any size. Brand blue is **`#1f20f1`**, taken from the artwork
-itself. `app.ico` puts a warm-50 mark on a blue rounded square rather than the
-reverse: at 16px in a taskbar, blue-on-near-black collapses into an unreadable
-blob (1.99:1 against 7.53:1 inverted).
+itself. Both icons put brand blue on a warm-50 rounded square rather than the reverse:
+at 16px in a taskbar, blue-on-near-black collapses into an unreadable blob
+(1.99:1 against 7.53:1 inverted).
 
 In the UI the mark is inline SVG using `currentColor`. Two tokens, deliberately
 separate: **`--visor-blue`** is the brand and never varies by theme, while
@@ -379,9 +379,22 @@ sizes the viewer to the image at up to 1:1 capped to the screen, and
 or resize** rather than only on `closing` — that event does not fire when a
 process is killed, which is exactly when losing the geometry is most annoying.
 
-**Icons live in two places for a reason.** `app.ico` is the application; `exr.ico`
-is the `.exr` document icon (an aperture with an EXR label), so a file and the app
-that opens it are not identical in Explorer. Below 32px `exr.ico` drops the label
+**Icons live in two places, and both are the aperture.** `app.ico` is the
+application - the aperture on its own; `exr.ico` is the `.exr` document icon -
+the same aperture with an EXR label from 32px up.
+
+They used to differ by design (a VISOR mark for the app, an aperture for the
+file) so a document and the app opening it were distinguishable. That was
+abandoned in 3.1.1 for a practical reason: **when nothing owns `.exr`, Explorer
+draws files with the icon of the application that handles them**, not the
+document icon. With the ProgID claim withdrawn - which is the correct state on a
+machine where Photoshop owns the type, see above - every `.exr` showed the VISOR
+mark. Making the app icon the aperture too means the file looks right whichever
+icon Windows reaches for.
+
+`app.ico` is generated from `exr.ico`: crop the aperture (a square off the top
+of the blue bounding box - the label is the same blue and swallows a plain
+bbox), redraw it centred on the tile at 168/256, emit all eight sizes. Below 32px `exr.ico` drops the label
 and gives the aperture the whole tile, because the text is unreadable there.
 Registry entries point at a **copy under `%LOCALAPPDATA%`**, never at `BASE_DIR`:
 in a one-file build that is a temp directory which is deleted on exit, so the icon

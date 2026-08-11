@@ -834,32 +834,36 @@ def set_association(enable):
     # the rest reachable; ours is left alone - see _clear_user_choice.
     _clear_user_choice()
 
-    # Claim .exr's class default last, then check with the shell whether it
-    # actually took - and take it back out if it did not.
+    # Claim .exr's class default only when nothing else owns the type.
     #
-    # This key is the one that gives .exr the aperture document icon, because
-    # the icon comes off the ProgID. It is also a trap when it does not work:
-    # Windows 11's Settings reads it to decide what to *display* as the current
-    # default, so a claim that Explorer ignores makes Settings show us as the
-    # default and grey out its "Set default" button - there is apparently
-    # nothing to change - while double-click still opens Photoshop. That locks
-    # the user out of the only UI that could fix it, and we would be the ones
-    # doing the locking.
+    # Claiming it looks like it works and does not last. Straight after the
+    # write plus SHChangeNotify the shell really does resolve .exr to us -
+    # `--diag` says so, and a double-click opens the viewer. Minutes later, with
+    # the registry byte-for-byte unchanged, the same query returns Photoshop
+    # again. The win is transient; Windows settles back to the machine-wide
+    # registration. This burned a whole afternoon: every "it works now" reading
+    # was taken inside that window.
     #
-    # Claiming it only works because of the OpenWithProgids, Capabilities and
-    # Applications entries above; with the older, thinner registration the same
-    # key resolved straight back to Photoshop. Rather than encode a rule about
-    # when that holds, ask: write it, query the shell, keep it if we won.
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
-                          r"Software\Classes\.exr") as k:
-        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
-    refresh_shell()
-    if not association_state()[0]:
+    # Verifying with the shell does not rescue it either, because the check
+    # falls inside the same window and passes.
+    #
+    # And a claim that has decayed is worse than none, because Windows 11
+    # Settings reads this key to decide what to *display* as the current
+    # default: it shows this app, greys out "Set default" - apparently nothing
+    # to change - while double-click opens Photoshop. The user is then locked
+    # out of the one UI that could fix it, by us.
+    #
+    # So leave it alone when the type is owned. OpenWithProgids and Capabilities
+    # above still list us, "Set default" stays live, and one trip through
+    # Settings writes a real UserChoice - which is durable, restores the
+    # aperture icon (the icon comes off the ProgID), and which
+    # _clear_user_choice now refuses to delete.
+    if effective_handler() is None:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
                               r"Software\Classes\.exr") as k:
-            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "")
-        refresh_shell()
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, PROG_ID)
 
+    refresh_shell()
     return True
 
 
