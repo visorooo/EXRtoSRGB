@@ -229,6 +229,18 @@ releases the mutex and the guard silently stops working.
 there. It fails by rejecting a promise, so a JS-side implementation looks like it
 does nothing at all.
 
+Two things it must keep. **Every prototype is declared** — without `argtypes`,
+ctypes marshals a Python int as a C `int`, so a 64-bit `HGLOBAL` is truncated, and
+above 2^31 it raises `int too long to convert` rather than failing quietly. That
+made every copy throw while the JS side saw only a call that returned nothing. And
+**`OpenClipboard` is retried** — the clipboard is one global lock held by one
+process at a time, so it fails transiently whenever a clipboard manager or another
+app is touching it; without the retry, roughly a third of copies failed at random.
+
+**Test the clipboard by reading it back.** Asserting that `copy_text` was *called*
+proves nothing: the original bug threw inside it, after the call was recorded, and
+a test built that way reported eleven successful copies while none had happened.
+
 **`ui/app.js`** — `applyDefaults()` sets every control from code at startup.
 WebView2 restores form state from its profile across launches, which silently
 flipped un-premultiply off between runs. Do not rely on `checked` in the markup.

@@ -30,7 +30,7 @@ from webview.dom import DOMEventHandler
 import core
 
 APP_NAME = "EXR → sRGB"
-VERSION = "3.0.1"
+VERSION = "3.0.2"
 
 # _MEIPASS only exists in a frozen build; from source this is the repo folder.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -119,19 +119,50 @@ def set_clipboard(text):
     from ctypes import wintypes
     CF_UNICODETEXT, GMEM_MOVEABLE = 13, 0x0002
     u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+
+    # Every prototype is declared. Without argtypes ctypes marshals a Python
+    # int as a C int, so a 64-bit HGLOBAL is truncated - and above 2^31 it does
+    # not truncate quietly, it raises "int too long to convert". That made every
+    # copy on this window fail while looking, from the JS side, like a call that
+    # simply returned nothing.
+    k32.GlobalAlloc.restype = wintypes.HGLOBAL
+    k32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    k32.GlobalLock.restype = ctypes.c_void_p
+    k32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    k32.GlobalUnlock.restype = wintypes.BOOL
+    k32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    k32.GlobalFree.restype = wintypes.HGLOBAL
+    k32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+    u32.OpenClipboard.restype = wintypes.BOOL
+    u32.OpenClipboard.argtypes = [wintypes.HWND]
+    u32.EmptyClipboard.restype = wintypes.BOOL
+    u32.CloseClipboard.restype = wintypes.BOOL
+    u32.SetClipboardData.restype = wintypes.HANDLE
+    u32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+
     buf = ctypes.create_unicode_buffer(text)
     size = ctypes.sizeof(buf)
-    k32.GlobalAlloc.restype = wintypes.HGLOBAL
-    k32.GlobalLock.restype = ctypes.c_void_p
     handle = k32.GlobalAlloc(GMEM_MOVEABLE, size)
     if not handle:
         return False
     ptr = k32.GlobalLock(handle)
     if not ptr:
+        k32.GlobalFree(handle)
         return False
     ctypes.memmove(ptr, buf, size)
     k32.GlobalUnlock(handle)
-    if not u32.OpenClipboard(None):
+
+    # The clipboard is a single global lock and only one process may hold it at
+    # a time, so OpenClipboard fails transiently whenever anything else is
+    # touching it - a clipboard manager, another app, the window that just lost
+    # focus. Retrying briefly is the documented remedy; without it a copy fails
+    # at random and looks like the button not working.
+    import time as _time
+    for attempt in range(10):
+        if u32.OpenClipboard(None):
+            break
+        _time.sleep(0.02 * (attempt + 1))
+    else:
         k32.GlobalFree(handle)
         return False
     try:

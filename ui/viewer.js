@@ -434,10 +434,9 @@ function wire() {
   on('v100', 'click', () => actualPixels());
   on('vconvert', 'click', () => openMenu());
 
-  on('vswatch', 'click', async () => {
+  on('vswatch', 'click', () => {
     if (!lastHex) return;
-    await window.pywebview.api.copy_text(lastHex);
-    toast(`Copied ${lastHex}`);
+    copyWithFeedback(lastHex, $('vswatch'));
   });
 
   on('vcompare', 'click', async () => {
@@ -674,12 +673,41 @@ function copyable(text, title) {
   b.type = 'button';
   b.textContent = text;
   b.title = title ? `${title} — click to copy` : 'Click to copy';
-  b.onclick = async (e) => {
+  b.onclick = (e) => {
     e.stopPropagation();
-    await window.pywebview.api.copy_text(text);
-    toast(`Copied ${text}`);
+    copyWithFeedback(text, b);
   };
   return b;
+}
+
+/*
+ * Copy, and confirm it on the thing that was clicked.
+ *
+ * Only badges on success: claiming "Copied" over a failed write is worse than
+ * silence, and is how a broken clipboard stayed invisible.
+ */
+let copiedTimer = null;
+async function copyWithFeedback(text, el) {
+  let ok = false;
+  try {
+    ok = await window.pywebview.api.copy_text(text);
+  } catch (err) {
+    ok = false;
+  }
+  if (!ok) {
+    toast('Could not copy to the clipboard', true);
+    return;
+  }
+  if (!el) {
+    toast(`Copied ${text}`);
+    return;
+  }
+  clearTimeout(copiedTimer);
+  for (const other of document.querySelectorAll('.copied')) {
+    other.classList.remove('copied');
+  }
+  el.classList.add('copied');
+  copiedTimer = setTimeout(() => el.classList.remove('copied'), 1100);
 }
 
 function paintProbe(p) {
@@ -779,10 +807,7 @@ async function pickAt(e) {
   locked = true;
   $('vswatch').classList.add('locked');
   setPicking(false);
-  if (p.hex) {
-    await window.pywebview.api.copy_text(p.hex);
-    toast(`Copied ${p.hex}`);
-  }
+  if (p.hex) await copyWithFeedback(p.hex, $('vswatch'));
   return true;
 }
 

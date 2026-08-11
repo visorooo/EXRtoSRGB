@@ -539,16 +539,12 @@ function wireProbe() {
     probe.locked = true;
     swatch.classList.add('locked');
     setPicking(false);
-    if (p.hex) {
-      await window.pywebview.api.copy_text(p.hex);
-      log(`Copied ${p.hex}`, 'ok');
-    }
+    if (p.hex) copyWithFeedback(p.hex, swatch);
   });
 
-  swatch.onclick = async () => {
+  swatch.onclick = () => {
     if (!probe.hex) return;
-    await window.pywebview.api.copy_text(probe.hex);
-    log(`Copied ${probe.hex}`, 'ok');
+    copyWithFeedback(probe.hex, swatch);
   };
 }
 
@@ -566,12 +562,42 @@ function copyable(text, title) {
   b.type = 'button';
   b.textContent = text;
   b.title = title ? `${title} — click to copy` : 'Click to copy';
-  b.onclick = async (e) => {
+  b.onclick = (e) => {
     e.stopPropagation();
-    await window.pywebview.api.copy_text(text);
-    log(`Copied ${text}`, 'ok');
+    copyWithFeedback(text, b);
   };
   return b;
+}
+
+/*
+ * Copy, and say so where the user is looking.
+ *
+ * The log line at the bottom of the window is too far from the value that was
+ * clicked to read as a response to the click. The badge only appears if the
+ * clipboard actually took the text - saying "Copied" over a failed write is
+ * worse than saying nothing, which is exactly how the ctypes handle bug stayed
+ * invisible for as long as it did.
+ */
+let copiedTimer = null;
+async function copyWithFeedback(text, el) {
+  let ok = false;
+  try {
+    ok = await window.pywebview.api.copy_text(text);
+  } catch (err) {
+    ok = false;
+  }
+  if (!ok) {
+    log(`Could not copy ${text} to the clipboard.`, 'err');
+    return;
+  }
+  log(`Copied ${text}`, 'ok');
+  if (!el) return;
+  clearTimeout(copiedTimer);
+  for (const other of document.querySelectorAll('.copied')) {
+    other.classList.remove('copied');
+  }
+  el.classList.add('copied');
+  copiedTimer = setTimeout(() => el.classList.remove('copied'), 1100);
 }
 
 /*
