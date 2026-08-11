@@ -54,7 +54,15 @@ tested without opening a window.
   answered. `get_config` takes either a built-in registry name or a path to a
   `config.ocio`.
 - **Layer resolution** — `split_channel` / `group_layers` / `score_layer` /
-  `pick_layer` / `probe_layers`. See the invariants below.
+  `pick_layer` / `pick_from_index` / `layer_index` / `probe_layers`. See the
+  invariants below.
+- **`layer_index`** — every layer across every **part**. Blender's File Output
+  node writes one subimage per slot, so a custom AOV pass arrives as 16 parts
+  rather than 16 channel groups; reading only part 0 shows one layer and hides
+  the rest with nothing to suggest anything is missing. Layers keep their own
+  name (Blender prefixes each part's channels with it), falling back to the part
+  name and then its index. **Part 0 keeps the empty name** for a plain
+  single-part image — the UI and every saved setting rely on that.
 - **`layer_tag`** — the filename fragment naming a layer, `""` for the auto case.
   Exporting two layers of one EXR without it silently overwrites: same stem, same
   suffix, same folder. It strips the view-layer prefix, so `ViewLayer.Diffuse Color`
@@ -460,6 +468,11 @@ The preview stays display-referred in this mode (raw linear renders as a near-bl
 smear) and returns `preview_only=True` so the UI can say so.
 
 ## Two invariants that have already been violated once
+
+**Cryptomatte is read from whichever part carries the metadata**, not from part
+0. The channel indices in `ranks` only mean anything against that part's channel
+list, so `read_crypto_ranks` takes the subimage too — reading them from part 0
+would return whatever happened to sit at those positions.
 
 **Never match EXR channels on the component suffix alone.** Channels are
 `<layer>.<component>`, so a Blender AOV dump contains fifteen channels ending in

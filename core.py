@@ -298,37 +298,105 @@ def image_size(path):
     return size
 
 
-def probe_layers(path):
-    """Return the convertible layer names in an EXR, best-guess first."""
+def layer_index(path):
+    """
+    Every convertible layer in an EXR, across every part.
+
+    Returns an ordered `{name: (subimage, components)}`.
+
+    Multi-part matters more than it sounds. Blender's File Output node writes
+    one **subimage per slot**, so a custom AOV pass - the thing anyone actually
+    recombines a beauty from in comp - arrives as 16 parts rather than 16
+    channel groups. Reading only part 0 shows exactly one layer and hides the
+    rest, with nothing to suggest anything is missing.
+
+    Naming: layers keep their own name where they have one, since Blender
+    prefixes each part's channels with it. A part whose channels are bare RGBA
+    falls back to the part name, then to its index. Part 0 keeps the empty name
+    for a plain single-part image, which is what the rest of the code and every
+    saved setting already expect.
+    """
     src = oiio.ImageInput.open(path)
     if src is None:
         raise IOError("Could not open EXR: %s" % oiio.geterror())
-    names = list(src.spec().channelnames)
-    src.close()
-    return sorted(group_layers(names), key=lambda k: (-score_layer(k), k))
+    out = {}
+    try:
+        sub = 0
+        while src.seek_subimage(sub, 0):
+            spec = src.spec()
+            part = spec.getattribute("name") or ""
+            for lname, comps in group_layers(list(spec.channelnames)).items():
+                key = lname or (part if sub else "")
+                if not key and sub:
+                    key = "part%d" % sub
+                # Two parts can carry identically named layers; a name that
+                # silently overwrote another would hide a pass completely.
+                if key in out:
+                    key = "%s (part %d)" % (key or "R,G,B", sub)
+                out[key] = (sub, comps)
+            sub += 1
+    finally:
+        src.close()
+    return out
+
+
+def probe_layers(path):
+    """Return the convertible layer names in an EXR, best-guess first."""
+    index = layer_index(path)
+    return sorted(index, key=lambda k: (-score_layer(k), k))
+
+
+def pick_from_index(index, requested=None):
+    """
+    Resolve which layer to convert, given a multi-part index.
+
+    Same rules as pick_layer, which stays for the single-spec case: never match
+    on the component suffix, score names, and say so when the choice was not
+    clear-cut.
+    """
+    if not index:
+        raise ValueError("no RGB channels found")
+    if requested is not None and requested in index:
+        sub, comps = index[requested]
+        return requested, sub, comps, None
+
+    note = None
+    if requested is not None:
+        note = "layer %r not in this file, auto-detected instead" % requested
+
+    best = sorted(index, key=lambda k: (-score_layer(k), k))[0]
+    sub, comps = index[best]
+    if score_layer(best) <= 0:
+        extra = "no layer looks like a beauty pass, using %r" % (best or "R,G,B")
+        note = "%s; %s" % (note, extra) if note else extra
+    return best, sub, comps, note
 
 
 def read_layer(path, requested=None):
     """
-    Read one layer out of an EXR.
+    Read one layer out of an EXR, from whichever part holds it.
 
     Returns (rgb float32 HxWx3, alpha float32 HxW or None, W, H, layer, note).
     Only the channels needed are read - a 60-channel Blender AOV dump is
     otherwise half a gigabyte of float for three channels of output.
     """
+    index = layer_index(path)
+    layer, sub, comps, note = pick_from_index(index, requested)
+
     src = oiio.ImageInput.open(path)
     if src is None:
         raise IOError("Could not open EXR: %s" % oiio.geterror())
     try:
+        if not src.seek_subimage(sub, 0):
+            raise IOError("part %d missing from %s" % (sub, path))
         spec = src.spec()
         W, H = spec.width, spec.height
-        layer, comps, note = pick_layer(list(spec.channelnames), requested)
         wanted = [comps["r"], comps["g"], comps["b"]]
         has_alpha = "a" in comps
         if has_alpha:
             wanted.append(comps["a"])
         lo, hi = min(wanted), max(wanted) + 1
-        pixels = src.read_image(0, 0, lo, hi, "float")
+        pixels = src.read_image(sub, 0, lo, hi, "float")
     finally:
         src.close()
 
@@ -686,10 +754,23 @@ def probe_cryptomattes(path):
     src = oiio.ImageInput.open(path)
     if src is None:
         raise IOError("Could not open EXR: %s" % oiio.geterror())
-    spec = src.spec()
-    channels = list(spec.channelnames)
-    meta = {a.name: a.value for a in spec.extra_attribs}
-    src.close()
+    # Cryptomatte usually lives in the first part, but a File Output node can
+    # put it in any of them. Take the first part that actually carries the
+    # metadata rather than assuming zero and reporting "none found".
+    channels, meta, subimage = [], {}, 0
+    try:
+        sub = 0
+        while src.seek_subimage(sub, 0):
+            spec = src.spec()
+            m = {a.name: a.value for a in spec.extra_attribs}
+            if any(k.startswith("cryptomatte/") for k in m):
+                channels = list(spec.channelnames)
+                meta = m
+                subimage = sub
+                break
+            sub += 1
+    finally:
+        src.close()
 
     blocks = {}
     for key, value in meta.items():
@@ -737,22 +818,33 @@ def probe_cryptomattes(path):
             "label": name.rsplit(".", 1)[-1] if name else cid,
             "objects": objects,
             "ranks": ranks,
+            # Which part the rank channels are in - the indices in `ranks` are
+            # only meaningful against that part's channel list.
+            "subimage": subimage,
             "incomplete": not ranks or not objects,
         })
     return out
 
 
-def read_crypto_ranks(path, ranks):
-    """Read the ID/coverage channel pairs for one cryptomatte type."""
+def read_crypto_ranks(path, ranks, subimage=0):
+    """
+    Read the ID/coverage channel pairs for one cryptomatte type.
+
+    `subimage` comes from probe_cryptomattes: the channel indices in `ranks`
+    index that part's channel list, so reading them from part 0 would return
+    whatever happened to sit at those positions there.
+    """
     wanted = sorted({i for pair in ranks for i in pair})
     src = oiio.ImageInput.open(path)
     if src is None:
         raise IOError("Could not open EXR: %s" % oiio.geterror())
     try:
+        if not src.seek_subimage(int(subimage), 0):
+            raise IOError("part %s missing from %s" % (subimage, path))
         spec = src.spec()
         W, H = spec.width, spec.height
         lo, hi = wanted[0], wanted[-1] + 1
-        pixels = src.read_image(0, 0, lo, hi, "float")
+        pixels = src.read_image(int(subimage), 0, lo, hi, "float")
     finally:
         src.close()
     arr = np.array(pixels, dtype=np.float32).reshape(H, W, hi - lo)
@@ -773,7 +865,7 @@ def extract_matte(path, crypto, object_names):
     if not targets:
         raise ValueError("none of those objects are in this cryptomatte")
 
-    pairs, W, H = read_crypto_ranks(path, crypto["ranks"])
+    pairs, W, H = read_crypto_ranks(path, crypto["ranks"], crypto.get("subimage", 0))
     cov = np.zeros((H, W), dtype=np.float32)
     for ids, weights in pairs:
         hit = np.zeros((H, W), dtype=bool)
@@ -848,7 +940,7 @@ def crypto_preview(path, crypto, max_px=512, selected=(), dim_unselected=True):
 
     No display transform: these are IDs, not colour.
     """
-    pairs, W, H = read_crypto_ranks(path, crypto["ranks"])
+    pairs, W, H = read_crypto_ranks(path, crypto["ranks"], crypto.get("subimage", 0))
     factor = max(1, -(-max(W, H) // max_px))
     ids0 = np.ascontiguousarray(_subsample(pairs[0][0], factor))
     h, w = ids0.shape
@@ -974,7 +1066,7 @@ def convert_mattes(in_path, settings, crypto_id, object_names):
                             else "no rank channels"))
 
     # read the ranks once no matter how many mattes come out of them
-    pairs, W, H = read_crypto_ranks(in_path, crypto["ranks"])
+    pairs, W, H = read_crypto_ranks(in_path, crypto["ranks"], crypto.get("subimage", 0))
 
     def coverage(names):
         targets = [crypto["objects"][n] for n in names if n in crypto["objects"]]

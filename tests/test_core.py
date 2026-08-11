@@ -899,6 +899,121 @@ def test_render_before_load_raises(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Multi-part EXR
+#
+# Blender's File Output node writes one subimage per slot, so a custom AOV pass
+# arrives as N parts rather than N channel groups. Reading only part 0 shows a
+# single layer and hides the rest with nothing to suggest anything is missing -
+# which is what a real 16-part render did.
+# ---------------------------------------------------------------------------
+
+def _multipart_exr(path, parts, w=4, h=4):
+    """
+    Write a multi-part EXR. `parts` is [(name, value), ...].
+
+    Each part carries RGBA prefixed with its own name, which is what Blender
+    does, and a distinct value so the parts can be told apart by their pixels.
+    """
+    specs = []
+    for name, _ in parts:
+        s = oiio.ImageSpec(w, h, 4, "float")
+        s.channelnames = ["%s.%s" % (name, c) for c in ("R", "G", "B", "A")]
+        s.attribute("name", name)
+        specs.append(s)
+    out = oiio.ImageOutput.create(str(path))
+    assert out is not None and out.supports("multiimage"), "need multi-part EXR"
+    out.open(str(path), specs)
+    for i, (_, value) in enumerate(parts):
+        if i:
+            out.open(str(path), specs[i], "AppendSubimage")
+        px = np.zeros((h, w, 4), np.float32)
+        px[..., :3] = value
+        px[..., 3] = 1.0
+        out.write_image(px)
+    out.close()
+    return str(path)
+
+
+PARTS = [("Beauty Denoised", 0.18), ("Normal", 0.4), ("Diffuse_Color", 0.6),
+         ("Ambient_Occlusion", 0.8)]
+
+
+def test_every_part_is_a_layer(tmp_path):
+    src = _multipart_exr(tmp_path / "multi.exr", PARTS)
+    assert sorted(core.probe_layers(src)) == sorted(n for n, _ in PARTS)
+
+
+def test_beauty_still_wins_across_parts(tmp_path):
+    """The auto-pick has to rank over all parts, not just the first one."""
+    src = _multipart_exr(tmp_path / "multi.exr",
+                         [("Ambient_Occlusion", 0.8), ("Beauty Denoised", 0.18)])
+    assert core.probe_layers(src)[0] == "Beauty Denoised"
+    _, _, _, _, layer, _ = core.read_layer(src)
+    assert layer == "Beauty Denoised"
+
+
+@pytest.mark.parametrize("name,value", PARTS)
+def test_each_part_reads_its_own_pixels(tmp_path, name, value):
+    """
+    The failure this guards is silent: the wrong part decodes fine and looks
+    plausible, exactly like the v1.0 layer bug.
+    """
+    src = _multipart_exr(tmp_path / "multi.exr", PARTS)
+    rgb, alpha, w, h, layer, _ = core.read_layer(src, name)
+    assert layer == name
+    assert rgb.mean() == pytest.approx(value, abs=1e-4)
+    assert alpha is not None
+
+
+def test_single_part_files_are_unchanged(tmp_path):
+    """The bare-layer name stays '' - saved settings and the UI rely on it."""
+    src = _synthetic_alpha_exr(str(tmp_path / "plain.exr"))
+    assert core.probe_layers(src) == [""]
+    assert list(core.layer_index(src)) == [""]
+
+
+def test_colliding_layer_names_across_parts_keep_both(tmp_path):
+    """
+    Two parts can hold the same *layer* name even though EXR requires their
+    part names to differ - Blender does this when two slots write the same AOV.
+    Letting one key overwrite the other would drop a pass with no warning.
+    """
+    specs = []
+    for part in ("slotA", "slotB"):
+        s = oiio.ImageSpec(4, 4, 3, "float")
+        s.channelnames = ["Beauty.R", "Beauty.G", "Beauty.B"]
+        s.attribute("name", part)
+        specs.append(s)
+    path = str(tmp_path / "dupe.exr")
+    out = oiio.ImageOutput.create(path)
+    out.open(path, specs)
+    for i, val in enumerate((0.2, 0.9)):
+        if i:
+            out.open(path, specs[i], "AppendSubimage")
+        out.write_image(np.full((4, 4, 3), val, np.float32))
+    out.close()
+
+    index = core.layer_index(path)
+    assert len(index) == 2, "a colliding name silently dropped a part: %s" % list(index)
+    # and each key still reads its own pixels
+    values = sorted(round(float(core.read_layer(path, k)[0].mean()), 3)
+                    for k in index)
+    assert values == [0.2, 0.9]
+
+
+def test_layers_from_parts_convert_to_different_files(tmp_path):
+    """End to end: two parts, two files, different pixels."""
+    src = _multipart_exr(tmp_path / "multi.exr", PARTS)
+    outs = []
+    for name in ("Beauty Denoised", "Ambient_Occlusion"):
+        s = settings(tmp_path, layer=name, suffix=core.layer_tag(name))
+        outs.append(core.convert_one(src, s)[0])
+    assert len(set(outs)) == 2
+    a, b = (read_u8(p) for p in outs)
+    assert not np.array_equal(a[..., :3], b[..., :3])
+
+
+# ---------------------------------------------------------------------------
 # Layer naming and sequence expansion
 # ---------------------------------------------------------------------------
 

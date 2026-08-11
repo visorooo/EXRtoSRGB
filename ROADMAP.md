@@ -406,8 +406,13 @@ has, solved once for both.
   back to auto-detect per file. Mixed batches would benefit from remembering a
   choice per entry. Less pressing now that "every layer" exists — that covers the
   common case of wanting all of them.
-- **Multi-part EXR.** Only the first subimage is read. Rare from Blender and
-  Redshift, but Nuke writes them.
+- ~~**Multi-part EXR.** Only the first subimage is read.~~ **Done in v3.0**, and
+  it was not rare at all — the note above was wrong. Blender's **File Output**
+  node writes one part per slot, so the custom AOV pass a comp is rebuilt from
+  arrives as N parts. A real 16-part render showed exactly one layer, and a
+  2-part glare/highlights pass showed only glare, with nothing to indicate the
+  rest existed. Cryptomatte is now read from whichever part carries the metadata
+  too.
 - **WebP** output — **available**, the bundled OIIO has a WebP writer (checked).
   8-bit only, so it slots in beside JPEG rather than replacing anything.
 - **JPEG-XL** — **blocked, not a choice.** This OIIO build has no `jxl` writer

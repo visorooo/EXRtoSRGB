@@ -68,6 +68,18 @@ have. Viewers are unrestricted — open as many images at once as you like.
 
 ---
 
+## Multi-part EXR
+
+Blender's **File Output** node writes one *part* per slot rather than one channel
+group per pass, so a custom AOV export — the thing you rebuild a beauty from in
+comp — is a multi-part file. Every part is listed as a layer, so a 16-slot output
+gives you all sixteen, and a glare/highlights pass gives you both.
+
+Layers keep their own names, and the beauty is still auto-detected across all
+parts. Cryptomatte is read from whichever part carries it.
+
+---
+
 ## Layer — read this if your render has AOVs
 
 A multi-layer EXR stores its channels as `<layer>.<component>`, so a Blender render
