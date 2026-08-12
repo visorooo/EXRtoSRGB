@@ -1294,13 +1294,27 @@ function setTheme(theme) {
  * silence: a converter that cannot reach GitHub still converts.
  * ------------------------------------------------------------------------ */
 
+/*
+ * The title-bar pill.
+ *
+ * It used to open the release page, which left the user to download and run
+ * the installer by hand - the exact thing the in-app updater exists to avoid,
+ * and indistinguishable from it being broken. It now opens the settings sheet
+ * and starts the update, so the download reports progress somewhere visible
+ * rather than the window silently going away 40 MB later.
+ */
 function showUpdatePill(info) {
   const pill = $('update-pill');
   if (!pill || !info || !info.available) return;
   pill.textContent = `v${info.latest} available`;
-  pill.title = `You have v${info.current}. Click to open the release page.`;
+  pill.title = `You have v${info.current}. Click to update.`;
   pill.hidden = false;
-  pill.onclick = () => window.pywebview.api.open_url(info.url);
+  pill.onclick = () => {
+    $('prefsheet').hidden = false;
+    $('btn-prefs').setAttribute('aria-expanded', 'true');
+    offerInstall(info);
+    $('install-update').click();
+  };
 }
 
 async function wireUpdateCheck() {

@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-EXR -> sRGB  ·  ACES linear -> PNG / JPEG / TIFF
+EXR -> sRGB  Â·  ACES linear -> PNG / JPEG / TIFF
 
 A batch converter for renders out of Blender Cycles, C4D Octane and C4D Redshift.
 Colour is handled with OpenColorIO's built-in ACES configs - the same engine the
@@ -32,8 +32,8 @@ from webview.dom import DOMEventHandler
 
 import core
 
-APP_NAME = "EXR → sRGB"
-VERSION = "3.2.0"
+APP_NAME = "EXR â†’ sRGB"
+VERSION = "3.2.1"
 
 # _MEIPASS only exists in a frozen build; from source this is the repo folder.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -224,7 +224,7 @@ def focus_existing_instance():
         return False
     import ctypes
     u32 = ctypes.windll.user32
-    title = "%s  ·  v%s" % (APP_NAME, VERSION)
+    title = "%s  Â·  v%s" % (APP_NAME, VERSION)
     hwnd = u32.FindWindowW(None, title)
     if not hwnd:
         return False
@@ -406,11 +406,11 @@ CONTEXT_KEY = r"Software\Classes\SystemFileAssociations\.exr\shell\EXRtoSRGB.Con
 
 # label, format, bit depth, transfer
 CONVERT_VERBS = [
-    ("01png", "PNG · 16-bit", "png", 16, "display"),
-    ("02png8", "PNG · 8-bit", "png", 8, "display"),
-    ("03jpg", "JPEG · quality 95", "jpeg", 8, "display"),
-    ("04tif", "TIFF · 16-bit", "tiff", 16, "display"),
-    ("05tiflin", "TIFF · 32-bit scene-linear", "tiff", 32, "linear"),
+    ("01png", "PNG Â· 16-bit", "png", 16, "display"),
+    ("02png8", "PNG Â· 8-bit", "png", 8, "display"),
+    ("03jpg", "JPEG Â· quality 95", "jpeg", 8, "display"),
+    ("04tif", "TIFF Â· 16-bit", "tiff", 16, "display"),
+    ("05tiflin", "TIFF Â· 32-bit scene-linear", "tiff", 32, "linear"),
 ]
 
 
@@ -539,7 +539,7 @@ def convert_cli(path, fmt="png", bits=16, transfer="display", layer=None):
             import ctypes
             ctypes.windll.user32.MessageBoxW(
                 None, "Could not convert:\n\n%s\n\n%s" % (path, e),
-                "EXR → sRGB", 0x10)
+                "EXR â†’ sRGB", 0x10)
         except Exception:
             pass
         return None
@@ -1347,7 +1347,7 @@ def open_viewer(path, blocking=True):
     bg = "#f5f4f1" if load_prefs().get("theme") == "light" else "#242322"
     x, y, w, h = viewer_geometry(path)
     win = webview.create_window(
-        "%s · EXR → sRGB" % os.path.basename(path),
+        "%s Â· EXR â†’ sRGB" % os.path.basename(path),
         os.path.join(UI_DIR, "viewer.html"),
         js_api=api, width=w, height=h, x=x, y=y, min_size=(560, 420),
         background_color=bg, text_select=False)
@@ -1475,7 +1475,7 @@ class Api:
     def _added_message(self, n):
         extra = getattr(self, "_last_expanded", 0)
         if extra > 0:
-            return ("Added %d file(s) — %d pulled in from the sequence."
+            return ("Added %d file(s) â€” %d pulled in from the sequence."
                     % (n, extra))
         return "Added %d file(s)." % n
 
@@ -1662,7 +1662,7 @@ class Api:
                    for label, name in core.ACES_CONFIGS.items()]
         for label, path in self.custom_configs.items():
             configs.append({"value": label, "label": label})
-        configs.append({"value": "__custom__", "label": "Custom config.ocio…"})
+        configs.append({"value": "__custom__", "label": "Custom config.ocioâ€¦"})
         return {
             "configs": configs,
             "current": core.ACES_CONFIGS[core.DEFAULT_CONFIG_LABEL],
@@ -1687,7 +1687,7 @@ class Api:
         except Exception as e:
             self._js("onLog", "Could not load config: %s" % e, "err")
             return {"ok": False}
-        label = "Custom · " + os.path.basename(os.path.dirname(path) or path)
+        label = "Custom Â· " + os.path.basename(os.path.dirname(path) or path)
         self.custom_configs[label] = path
         return {"ok": True, "config": label}
 
@@ -1920,7 +1920,7 @@ class Api:
         settings["matte_combine"] = bool(s.get("matte_combine"))
 
         fmt, _, bits = core.resolve_matte_output(settings)
-        self._js("onLog", "mattes · %d object(s) · %s %d-bit · %s"
+        self._js("onLog", "mattes Â· %d object(s) Â· %s %d-bit Â· %s"
                  % (len(object_names), fmt.upper(), bits,
                     "combined" if settings["matte_combine"] else "one per object"),
                  "dim")
@@ -2026,14 +2026,14 @@ class Api:
         # differ whenever the container cannot carry the requested depth.
         fmt, pix_fmt, bits = core.resolve_output(settings)
         if settings.get("transfer") == "linear":
-            head = "scene-linear (no display transform) · %s %d-bit float" % (
+            head = "scene-linear (no display transform) Â· %s %d-bit float" % (
                 fmt.upper(), bits)
         else:
-            head = "%s · %s · %s %d-bit" % (
+            head = "%s Â· %s Â· %s %d-bit" % (
                 core.describe_config(settings["config"]), settings["view"],
                 fmt.upper(), bits)
         if len(files) > 1:
-            head += " · %d threads" % min(core.default_workers(), len(files))
+            head += " Â· %d threads" % min(core.default_workers(), len(files))
         self._js("onLog", head, "dim")
         self.worker = threading.Thread(target=self._run, args=(files, settings),
                                        daemon=True)
@@ -2318,7 +2318,7 @@ def main():
     else:
         x, y = centre_on_screen(w, h)
     window = webview.create_window(
-        "%s  ·  v%s" % (APP_NAME, VERSION),
+        "%s  Â·  v%s" % (APP_NAME, VERSION),
         os.path.join(UI_DIR, "index.html"),
         js_api=api,
         width=w,
