@@ -215,6 +215,15 @@
                   <span class="box"></span>
                   <span>Convert every layer, one file each</span>
                 </label>
+                <!-- Sits with the other checkbox rather than in its own grid
+                     row: both are naming things about the output file, and a
+                     lone checkbox in a half-empty row reads as unfinished. -->
+                <label class="check">
+                  <input autocomplete="off" type="checkbox" id="suffix" />
+                  <span class="box"></span>
+                  <!-- text follows the output mode; see suffixFor() in app.js -->
+                  <span id="suffix-label">Add “_srgb”</span>
+                </label>
               </div>
               <!-- Two columns, because the entries name the tools they match
                    and at one column they truncated to "Keep alpha — matc...",
@@ -227,27 +236,18 @@
                      See the alpha note in CLAUDE.md. -->
                 <select autocomplete="off" id="alpha">
                   <option value="keep"
-                          title="Matches Nuke and After Effects exactly. The display transform is applied to the premultiplied value.">
+                          data-hint="premultiplied · matches what your compositor exports"
+                          title="The display transform is applied to the premultiplied value, which is what Nuke and After Effects write. Matches them bit-exactly.">
                     Keep alpha — match Nuke / After Effects
                   </option>
                   <option value="keep_straight"
+                          data-hint="un-premultiplied · correct for compositing on a new background"
                           title="Edge pixels keep true surface colour, with alpha stored separately. This is what PNG's specification asks for.">
-                    Keep alpha — straight (for compositing on a new background)
+                    Keep alpha — straight
                   </option>
                   <option value="black">Flatten on black</option>
                   <option value="white">Flatten on white</option>
                 </select>
-              </div>
-              <!-- Sits with the other checkbox rather than in the leftover
-                   half of the Alpha row, where it hung at the bottom of the
-                   cell with empty space above it. -->
-              <div class="field span2">
-                <label class="check">
-                  <input autocomplete="off" type="checkbox" id="suffix" />
-                  <span class="box"></span>
-                  <!-- text follows the output mode; see suffixFor() in app.js -->
-                  <span id="suffix-label">Add “_srgb”</span>
-                </label>
               </div>
             </div>
 

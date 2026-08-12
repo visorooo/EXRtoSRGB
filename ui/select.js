@@ -200,7 +200,26 @@ class Select {
       const text = document.createElement('span');
       text.className = 'select-item__text';
       text.textContent = opt.textContent.trim();
-      item.appendChild(text);
+
+      // `data-hint` is a second, dimmer line under the label, for the detail
+      // that would otherwise have to go in the label and truncate the trigger -
+      // the Alpha entries name a convention *and* the term a compositor would
+      // recognise it by. textContent, not innerHTML: option text comes from
+      // markup here but the layer lists are built from file contents, which are
+      // arbitrary strings out of a DCC.
+      const hint = opt.getAttribute('data-hint');
+      if (hint) {
+        const wrap = document.createElement('span');
+        wrap.className = 'select-item__lines';
+        const sub = document.createElement('span');
+        sub.className = 'select-item__hint';
+        sub.textContent = hint;
+        wrap.appendChild(text);
+        wrap.appendChild(sub);
+        item.appendChild(wrap);
+      } else {
+        item.appendChild(text);
+      }
 
       if (i === this.native.selectedIndex) {
         item.insertAdjacentHTML('beforeend', CHECK);

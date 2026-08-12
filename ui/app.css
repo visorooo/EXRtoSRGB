@@ -790,6 +790,30 @@ input[type='text']:focus {
   white-space: nowrap;
 }
 
+/* An option carrying a `data-hint`: label on top, detail under it. Lets the
+   label stay short enough that the trigger does not truncate, while the panel
+   still says the thing a user needs in order to choose. */
+.select-item__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.select-item__hint {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-faint);
+  white-space: normal;
+}
+
+/* The hint wraps, so the row is no longer one line tall. */
+.select-item:has(.select-item__hint) {
+  align-items: flex-start;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
 .select-item__check {
   position: absolute;
   right: 9px;
