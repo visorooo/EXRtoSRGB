@@ -138,18 +138,21 @@ unrestricted.
 The `_srgb` suffix is on by default, so converting in place never drops a `.png`
 next to its `.exr` with the same stem.
 
-**Un-premultiply picks the edge-pixel convention**, and both settings are correct
-— they answer different questions. It changes nothing but antialiased edges;
-opaque pixels are identical either way.
+**The Alpha setting picks the edge-pixel convention**, and the two "keep" entries
+are both correct — they answer different questions. Nothing but antialiased edges
+changes; opaque pixels are identical either way.
 
-| | What lands in the file | Use it when |
+| Alpha | What lands in the file | Use it when |
 |---|---|---|
-| **On** (default) | True surface colour, straight alpha — what PNG's spec asks for | The image will be composited over a new background |
-| **Off** | The transform applied to the premultiplied value — **matches Nuke and After Effects exactly** | You want the preview to match what your compositor exports |
+| **Keep alpha — match Nuke / After Effects** (default) | The display transform applied to the premultiplied value | You want the file to match what your compositor exports |
+| **Keep alpha — straight** | True surface colour, alpha stored alongside — what PNG's spec asks for | The image will be composited over a new background |
+| **Flatten on black / white** | No alpha channel; composited over that colour | You need a flat RGB deliverable |
 
 If you are diffing this tool's output against a Nuke or After Effects export and
-finding edges a few levels apart, that toggle is the reason. Turn it off and they
-match to the bit.
+finding edges a few levels apart, that setting is the reason — the default now
+matches both **to the bit**, measured on a 4000px production render.
+
+On the CLI: `--alpha keep` (default), `keep-straight`, `black`, `white`.
 
 ### Presets
 

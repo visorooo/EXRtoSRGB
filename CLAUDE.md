@@ -643,10 +643,20 @@ against Nuke and After Effects. Opaque pixels agreed to **2/65535** and alpha to
 **1/65535** — the colour pipeline was never in question. Only antialiased edges
 differed, by up to **28/255** on 0.21% of pixels:
 
-| un-premultiply | stored RGB | who else writes this |
-|---|---|---|
-| on (default) | `f(c/α)` — true surface colour, straight alpha | PNG's own spec; correct over a new background |
-| off | `f(c)` — transform applied to the premultiplied value | **Nuke and After Effects, bit-exactly** |
+| Alpha setting | `unpremult` | stored RGB | who else writes this |
+|---|---|---|---|
+| Keep — match Nuke/AE (**default**) | `False` | `f(c)` — transform applied to the premultiplied value | **Nuke and After Effects, bit-exactly** |
+| Keep — straight | `True` | `f(c/α)` — true surface colour, straight alpha | PNG's own spec; correct over a new background |
+
+**The choice lives in the Alpha dropdown, not a checkbox.** It used to be a
+separate "Un-premultiply" tickbox sitting beside an Alpha select that already
+decided keep/flatten — two controls for one question, and the tickbox's label
+said nothing about which tool it matched. `gather()` in `ui/app.js` and `cli.py`
+both split the one UI value back into `alpha_mode` + `unpremult`, so `core`'s
+contract is unchanged. Flatten modes keep `unpremult=True`, which is the
+colour-correct way to composite over a background. `applyPreset` maps a
+pre-3.1.2 preset (`alpha_mode="keep"` + `unpremult=True`) onto `keep_straight`,
+or applying an old preset would silently change the convention it was saved with.
 
 Note `f(c) ≠ α·f(c/α)`: the transform is non-linear, so "off" is not a missing
 re-premultiply and must not be re-derived as one. That conflation is what made

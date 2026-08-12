@@ -218,25 +218,23 @@
               </div>
               <div class="field">
                 <label class="lbl" for="alpha">Alpha</label>
+                <!-- The two "keep" entries differ only on antialiased edges,
+                     and both are correct - they answer different questions.
+                     See the alpha note in CLAUDE.md. -->
                 <select autocomplete="off" id="alpha">
-                  <option value="keep">Keep alpha (RGBA)</option>
+                  <option value="keep"
+                          title="Matches Nuke and After Effects exactly. The display transform is applied to the premultiplied value.">
+                    Keep alpha — match Nuke / After Effects
+                  </option>
+                  <option value="keep_straight"
+                          title="Edge pixels keep true surface colour, with alpha stored separately. This is what PNG's specification asks for.">
+                    Keep alpha — straight (for compositing on a new background)
+                  </option>
                   <option value="black">Flatten on black</option>
                   <option value="white">Flatten on white</option>
                 </select>
               </div>
               <div class="field" style="justify-content: flex-end; gap: 7px">
-                <!-- This picks the edge-pixel convention, and the two are both
-                     legitimate: on stores true surface colour (straight alpha,
-                     what PNG's spec asks for and what a compositor wants when
-                     laying the image over a new background); off transforms the
-                     premultiplied value, which is what Nuke and After Effects
-                     write. Only antialiased edges differ. -->
-                <label class="check"
-                       title="On: straight alpha — edge pixels keep true surface colour, correct for compositing over a new background.&#10;Off: matches Nuke and After Effects exactly — the transform is applied to the premultiplied value.&#10;Only antialiased edges differ; opaque pixels are identical either way.">
-                  <input autocomplete="off" type="checkbox" id="unpremult" checked />
-                  <span class="box"></span>
-                  <span>Un-premultiply</span>
-                </label>
                 <label class="check">
                   <input autocomplete="off" type="checkbox" id="suffix" />
                   <span class="box"></span>

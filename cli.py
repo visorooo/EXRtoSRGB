@@ -99,11 +99,17 @@ def build_parser():
                    help="layer to convert (default: auto-detect the beauty)")
     p.add_argument("--all-layers", action="store_true",
                    help="convert every layer, one file each, named for the layer")
-    p.add_argument("--alpha", choices=("keep", "black", "white"), default="keep")
-    p.add_argument("--no-unpremult", action="store_true",
-                   help="do not un-premultiply before the transform "
-                        "(renders write associated alpha; leaving this on is "
-                        "almost always wrong)")
+    # `keep` matches Nuke and After Effects; `keep-straight` writes true
+    # surface colour with alpha alongside, which is what PNG's spec asks for and
+    # what a compositor wants when laying the image over a new background. They
+    # differ only on antialiased edges.
+    p.add_argument("--alpha",
+                   choices=("keep", "keep-straight", "black", "white"),
+                   default="keep",
+                   help="keep: match Nuke/After Effects (default); "
+                        "keep-straight: straight alpha, correct for "
+                        "compositing over a new background; "
+                        "black/white: flatten")
     p.add_argument("--suffix", metavar="STR", default=None,
                    help="output suffix (default: _srgb, or _linear)")
     p.add_argument("--no-suffix", action="store_true",
@@ -144,9 +150,12 @@ def _settings_for(a, config, layer):
         "format": a.format,
         "quality": a.quality,
         "bits": a.bits,
-        "alpha_mode": a.alpha,
+        # Same split the UI makes: core takes the channel decision and the edge
+        # convention as separate keys. Flatten keeps un-premultiply on, which is
+        # the colour-correct way to composite over a background.
+        "alpha_mode": "keep" if a.alpha == "keep-straight" else a.alpha,
         "layer": layer,
-        "unpremult": not a.no_unpremult,
+        "unpremult": a.alpha != "keep",
         "transfer": transfer,
         "out_dir": os.path.abspath(a.out) if a.out else None,
         "suffix": suffix,

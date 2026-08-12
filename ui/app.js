@@ -32,9 +32,18 @@ function settings() {
     format: $('format').value,
     quality: parseInt($('quality').value, 10),
     bits: parseInt($('bits').value, 10),
-    alpha_mode: $('alpha').value,
+    // The Alpha control carries two decisions: what to do with the channel,
+    // and - for the two "keep" entries - which edge convention to write. core
+    // still takes them as separate keys, so the split happens here rather than
+    // teaching the pipeline about a UI value.
+    //
+    // "keep" means matched to Nuke/After Effects, which is un-premultiply OFF:
+    // the display transform is applied to the premultiplied value. The flatten
+    // modes keep un-premultiply on, which is the colour-correct way to
+    // composite over a background and is what they have always done.
+    alpha_mode: $('alpha').value === 'keep_straight' ? 'keep' : $('alpha').value,
     layer: $('layer').value,
-    unpremult: $('unpremult').checked,
+    unpremult: $('alpha').value !== 'keep',
     suffix: $('suffix').checked ? suffixFor() : '',
     out_dir: $('outdir').value.trim(),
     all_layers: $('all-layers').checked,
@@ -1138,7 +1147,7 @@ function wire() {
     schedulePreview();
   };
   for (const id of ['input-cs', 'display', 'alpha', 'layer', 'bits',
-                    'quality', 'unpremult']) {
+                    'quality']) {
     $(id).onchange = schedulePreview;
   }
 
@@ -1290,8 +1299,10 @@ function applyDefaults() {
   setValue($('format'), 'png');
   setValue($('bits'), '16');
   setValue($('quality'), '95');
+  // Matched to Nuke/After Effects by default: the tool exists to preview what
+  // a comp will look like, so its edges should agree with the comp. "straight"
+  // is one entry down for anything going back over a new background.
   setValue($('alpha'), 'keep');
-  $('unpremult').checked = true;
   $('suffix').checked = true;
   $('all-layers').checked = false;
   $('outdir').value = '';
@@ -1329,8 +1340,11 @@ async function applyPreset(blob) {
   pick('format', blob.format);
   pick('bits', blob.bits);
   pick('quality', blob.quality);
-  pick('alpha', blob.alpha_mode);
-  if (blob.unpremult !== undefined) $('unpremult').checked = !!blob.unpremult;
+  // A preset saved before the Alpha control absorbed the un-premultiply
+  // checkbox stores the two separately. Keep honouring it, or applying an old
+  // preset would silently change the edge convention it was saved with.
+  pick('alpha', blob.alpha_mode === 'keep' && blob.unpremult
+    ? 'keep_straight' : blob.alpha_mode);
   if (blob.suffix !== undefined) $('suffix').checked = !!blob.suffix;
   syncFormat();
   schedulePreview();
