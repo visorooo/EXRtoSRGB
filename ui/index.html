@@ -521,6 +521,25 @@
               </dl>
             </section>
           </div>
+
+          <!--
+            Outside .sheet-cols so it stays put when the integration column
+            hides off Windows, and because the version is the first thing
+            anyone is asked for when reporting a problem.
+
+            The title-bar pill only appears when there is something newer, so
+            with nothing to report it is indistinguishable from a check that
+            never ran. This button is how you tell the difference.
+          -->
+          <div class="sheet-foot">
+            <span class="sheet-ver">
+              EXR → sRGB <span id="about-version">—</span>
+            </span>
+            <button class="ghost" id="check-update" type="button">
+              Check for updates
+            </button>
+            <span id="update-status" class="prefs-note"></span>
+          </div>
         </div>
       </div>
     </div>

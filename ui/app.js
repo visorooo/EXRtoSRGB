@@ -1277,21 +1277,77 @@ function setTheme(theme) {
  * silence: a converter that cannot reach GitHub still converts.
  * ------------------------------------------------------------------------ */
 
-async function wireUpdateCheck() {
+function showUpdatePill(info) {
   const pill = $('update-pill');
-  if (!pill) return;
+  if (!pill || !info || !info.available) return;
+  pill.textContent = `v${info.latest} available`;
+  pill.title = `You have v${info.current}. Click to open the release page.`;
+  pill.hidden = false;
+  pill.onclick = () => window.pywebview.api.open_url(info.url);
+}
+
+async function wireUpdateCheck() {
   let info = null;
   try {
     info = await window.pywebview.api.check_update();
   } catch (err) {
     return;
   }
-  if (!info || !info.available) return;
-  pill.textContent = `v${info.latest} available`;
-  pill.title = `You have v${info.current}. Click to open the release page.`;
-  pill.hidden = false;
-  pill.onclick = () => window.pywebview.api.open_url(info.url);
+  if (!info) return;
+  if ($('about-version')) $('about-version').textContent = `v${info.current}`;
+  if (!info.available) return;
+  showUpdatePill(info);
   log(`Version ${info.latest} is available — you have ${info.current}.`, 'dim');
+}
+
+/*
+ * The manual check, in the settings sheet.
+ *
+ * It has to report every outcome, including the two the startup check stays
+ * silent about. "Up to date" and "could not reach GitHub" look identical from
+ * outside otherwise - which is exactly the confusion that sent someone looking
+ * for a broken update button when the real answer was that nothing newer had
+ * been published yet.
+ */
+function wireManualUpdateCheck() {
+  const btn = $('check-update');
+  const out = $('update-status');
+  if (!btn || !out) return;
+
+  const say = (text, url) => {
+    out.textContent = text;
+    if (url) {
+      out.setAttribute('data-link', '');
+      out.onclick = () => window.pywebview.api.open_url(url);
+    } else {
+      out.removeAttribute('data-link');
+      out.onclick = null;
+    }
+  };
+
+  btn.onclick = async () => {
+    btn.disabled = true;
+    say('Checking…');
+    let info = null;
+    try {
+      info = await window.pywebview.api.check_update();
+    } catch (err) {
+      info = null;
+    }
+    btn.disabled = false;
+    if (!info) {
+      // Deliberately not phrased as an error: being offline is not a fault.
+      say('Could not reach GitHub. Try again later.');
+      return;
+    }
+    $('about-version').textContent = `v${info.current}`;
+    if (info.available) {
+      say(`v${info.latest} is available — open the release page`, info.url);
+      showUpdatePill(info);
+    } else {
+      say(`Up to date — v${info.current} is the latest release.`);
+    }
+  };
 }
 
 function applyDefaults() {
@@ -1447,6 +1503,7 @@ window.addEventListener('pywebviewready', async () => {
 
   await wirePresets();
   wireUpdateCheck();
+  wireManualUpdateCheck();
 
   const assoc = await window.pywebview.api.association();
   if (assoc.supported) {

@@ -1569,6 +1569,42 @@ input[type='range']:active::-webkit-slider-thumb {
   }
 }
 
+/* Version and the update check, under both columns. Full width so it survives
+   the integration column hiding off Windows. */
+/* Sticky, because the card is capped at 86vh and scrolls: the shortcut list
+   alone fills it, so a footer in normal flow sits below the fold and looks
+   like it was never added. It has to be visible without scrolling - it is
+   where the version is, which is the first thing anyone is asked for. */
+.sheet-foot {
+  position: sticky;
+  bottom: -18px;                 /* the card's own bottom padding */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 0 18px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.sheet-ver {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.sheet-foot .prefs-note {
+  margin: 0;
+  min-width: 0;
+}
+
+/* The result reads as a link once there is something to open. */
+.sheet-foot .prefs-note[data-link] {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .sheet-h {
   margin: 0 0 10px;
   font-size: 11px;
