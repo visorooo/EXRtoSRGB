@@ -107,6 +107,23 @@ function syncFormat() {
   if (jpeg) setValue($('bits'), '8');
   else if (fmt !== 'tiff' && $('bits').value === '32') setValue($('bits'), '16');
 
+  // JPEG has no alpha channel, so the two "keep" entries promise something the
+  // container cannot carry - core flattens regardless (force_flat in compose).
+  // Grey them with the reason rather than letting the value be set and quietly
+  // ignored, exactly as 32-bit is handled above. The entries' own tooltips are
+  // stashed on first pass so restoring does not wipe them.
+  for (const value of ['keep', 'keep_straight']) {
+    const opt = $('alpha').querySelector(`option[value="${value}"]`);
+    if (!opt) continue;
+    if (opt.dataset.tip === undefined) opt.dataset.tip = opt.title || '';
+    opt.disabled = jpeg;
+    opt.title = jpeg
+      ? 'JPEG cannot store alpha — choose a background to flatten onto'
+      : opt.dataset.tip;
+  }
+  // Land on something real rather than leaving a disabled entry selected.
+  if (jpeg && $('alpha').value.startsWith('keep')) setValue($('alpha'), 'black');
+
   // Nothing is being transformed, so the colour controls are inert
   $('input-cs').disabled = linear;
   $('display').disabled = linear;
