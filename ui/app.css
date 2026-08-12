@@ -1592,6 +1592,19 @@ input[type='range']:active::-webkit-slider-thumb {
   color: var(--ink-faint);
 }
 
+/* The update button, when there is one. Accented rather than `primary`, which
+   is the Convert button's weight and dwarfs a footer row. */
+.ghost.accent {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ghost.accent:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
 .sheet-foot .prefs-note {
   margin: 0;
   min-width: 0;

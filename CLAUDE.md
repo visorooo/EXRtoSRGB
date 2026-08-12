@@ -665,6 +665,34 @@ the difference look like a premultiply bug for the whole of v3.
 bytes rather than the associated read-back, which is the only way to see any of
 this — OIIO re-associates on the way in and hides it.
 
+## Updating in place
+
+`download_update` / `install_update` / `Api.install_update`. This is the only
+path that ends in **running an executable**, so the checks around it are the
+feature, not decoration:
+
+- The URL must start with `ASSET_PREFIX` - https, this repository, the
+  `releases/download/` path. Checked before any request is made.
+- The length must match the `size` the API reported.
+- The SHA-256 must match the `digest` the API published (GitHub returns
+  `"sha256:<hex>"`). Verified against the local build: they agree exactly.
+
+**A failed check deletes the partial file.** A half-written installer left in
+`%TEMP%` is precisely what a later run would find and trust.
+
+`Api.install_update` re-checks rather than trusting the blob the front end is
+holding - that result may be minutes old, and this one ends in execution.
+
+**The app must exit for setup to replace it**, so `install_update` starts the
+installer detached and a daemon thread calls `os._exit(0)` after ~1.2s - long
+enough for the UI to say what is happening before the window goes. The
+installer runs `/SILENT`, which still shows a progress window: something has to
+be on screen while the app it is replacing disappears. Per-user install, so no
+elevation prompt.
+
+Note the updater only reaches users who **already have a build containing it**.
+Anyone older still has to take the release-page link once.
+
 ## Installing
 
 `installer.iss` (Inno Setup) + `build_installer.py`. Build with

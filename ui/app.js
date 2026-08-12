@@ -1359,12 +1359,60 @@ function wireManualUpdateCheck() {
     }
     $('about-version').textContent = `v${info.current}`;
     if (info.available) {
-      say(`v${info.latest} is available — open the release page`, info.url);
+      say(`v${info.latest} is available.`);
+      offerInstall(info);
       showUpdatePill(info);
     } else {
       say(`Up to date — v${info.current} is the latest release.`);
     }
   };
+}
+
+/*
+ * The in-app update.
+ *
+ * Python does the work - download, verify against the release's published
+ * SHA-256, run the installer, exit - because the front end has no business
+ * fetching an executable. This only reports.
+ *
+ * There is no completion message by design: the app is replaced by the
+ * installer and disappears. Saying so before it goes is the whole message.
+ */
+function offerInstall(info) {
+  const btn = $('install-update');
+  const out = $('update-status');
+  if (!btn) return;
+  btn.hidden = false;
+  btn.textContent = `Update to v${info.latest}`;
+  btn.onclick = async () => {
+    btn.disabled = true;
+    $('check-update').disabled = true;
+    out.removeAttribute('data-link');
+    out.onclick = null;
+    out.textContent = 'Downloading…';
+    let res = null;
+    try {
+      res = await window.pywebview.api.install_update();
+    } catch (err) {
+      res = { ok: false, error: String(err) };
+    }
+    if (res && res.ok) {
+      out.textContent = 'Installing — the app will close and reopen updated.';
+      return;                       // the process exits; nothing follows
+    }
+    btn.disabled = false;
+    $('check-update').disabled = false;
+    out.textContent = `Update failed: ${res ? res.error : 'unknown error'}`;
+    // Still give them the manual route rather than a dead end.
+    out.setAttribute('data-link', '');
+    out.onclick = () => window.pywebview.api.open_url(info.url);
+  };
+}
+
+/* Called from Python while the installer downloads. */
+function onUpdateProgress(pct) {
+  const out = $('update-status');
+  if (out) out.textContent = `Downloading… ${pct}%`;
 }
 
 function applyDefaults() {

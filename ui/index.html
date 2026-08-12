@@ -538,6 +538,11 @@
             <button class="ghost" id="check-update" type="button">
               Check for updates
             </button>
+            <!-- Only appears once a check has found something; the download is
+                 verified against the release's published SHA-256 in Python. -->
+            <button class="ghost accent" id="install-update" type="button" hidden>
+              Update
+            </button>
             <span id="update-status" class="prefs-note"></span>
           </div>
         </div>

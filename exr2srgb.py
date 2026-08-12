@@ -24,6 +24,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 import traceback
 
 import webview
@@ -32,7 +33,7 @@ from webview.dom import DOMEventHandler
 import core
 
 APP_NAME = "EXR → sRGB"
-VERSION = "3.1.1"
+VERSION = "3.2.0"
 
 # _MEIPASS only exists in a frozen build; from source this is the repo folder.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -278,11 +279,15 @@ def check_for_update(timeout=6.0):
     tag = data.get("tag_name") or ""
     if not tag:
         return None
-    asset = ""
+    asset, size, digest = "", 0, ""
     for a in data.get("assets") or []:
         name = a.get("name") or ""
         if name.lower().endswith(".exe"):
             asset = a.get("browser_download_url") or ""
+            size = int(a.get("size") or 0)
+            # GitHub reports "sha256:<hex>"; it is what makes installing the
+            # download something other than an act of faith.
+            digest = (a.get("digest") or "").split(":")[-1].lower()
             break
     return {
         "available": _version_tuple(tag) > _version_tuple(VERSION),
@@ -290,7 +295,85 @@ def check_for_update(timeout=6.0):
         "current": VERSION,
         "url": data.get("html_url") or RELEASES_PAGE,
         "asset": asset,
+        "size": size,
+        "digest": digest,
     }
+
+
+ASSET_PREFIX = "https://github.com/visorooo/EXRtoSRGB/releases/download/"
+
+
+def download_update(info, on_progress=None, timeout=30.0):
+    """
+    Fetch the release installer and prove it is the one GitHub advertised.
+
+    Three checks, and all three matter, because the end of this is running the
+    file: the URL must be an asset of *this* repository over https, the length
+    must match what the API said, and the SHA-256 must match the digest the API
+    published. Anything else and the partial file is deleted rather than left
+    somewhere hopeful for a later run to find.
+    """
+    import hashlib
+    import urllib.request
+
+    url = (info or {}).get("asset") or ""
+    if not url.startswith(ASSET_PREFIX):
+        raise ValueError("refusing to download from outside the release page")
+    digest = (info.get("digest") or "").lower()
+    expect = int(info.get("size") or 0)
+
+    dst = os.path.join(tempfile.gettempdir(),
+                       "EXRtoSRGB_Setup_v%s.exe" % (info.get("latest") or "new"))
+    sha = hashlib.sha256()
+    got = 0
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "EXRtoSRGB/%s" % VERSION})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r, \
+                open(dst, "wb") as f:
+            total = int(r.headers.get("Content-Length") or expect or 0)
+            while True:
+                chunk = r.read(262144)
+                if not chunk:
+                    break
+                f.write(chunk)
+                sha.update(chunk)
+                got += len(chunk)
+                if on_progress and total:
+                    on_progress(got, total)
+        if expect and got != expect:
+            raise IOError("download was %d bytes, expected %d" % (got, expect))
+        if digest and sha.hexdigest() != digest:
+            raise IOError("checksum did not match the published release")
+    except Exception:
+        try:
+            os.remove(dst)
+        except OSError:
+            pass
+        raise
+    return dst
+
+
+def install_update(path):
+    """
+    Hand over to the installer and get out of its way.
+
+    The running exe cannot be replaced while it is running, so this starts
+    setup and the caller closes the app immediately afterwards. Per-user
+    install, so no elevation prompt. `/SILENT` still shows a progress window -
+    something has to be on screen while the app it replaces disappears.
+    """
+    if os.name != "nt":
+        raise RuntimeError("the updater is Windows-only")
+    if not os.path.isfile(path):
+        raise IOError("installer is missing")
+    import subprocess
+    subprocess.Popen(
+        [path, "/SILENT", "/NOCANCEL", "/NORESTART", "/SP-"],
+        close_fds=True,
+        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    return True
 
 
 def refresh_shell():
@@ -1460,6 +1543,51 @@ class Api:
         """
         result = check_for_update()
         return result or {}
+
+    def install_update(self):
+        """
+        Download the release installer, verify it, run it, and close.
+
+        The whole point is that the user never leaves the app. It re-checks
+        rather than trusting a result the front end has been holding: that
+        result may be minutes old, and this one ends in running an executable.
+
+        Progress goes over the bridge as it downloads, because this is 40-odd
+        MB and a button that appears to do nothing for a minute reads as broken.
+        """
+        info = check_for_update()
+        if not info or not info.get("available"):
+            return {"ok": False, "error": "already up to date"}
+        if not info.get("asset"):
+            return {"ok": False, "error": "that release has no installer"}
+        try:
+            last = [0]
+
+            def progress(got, total):
+                pct = int(got * 100 / total)
+                # Only on change: the bridge is not free, and 40 MB in 256 KB
+                # chunks is well over a hundred calls otherwise.
+                if pct != last[0]:
+                    last[0] = pct
+                    self._js("onUpdateProgress", pct)
+
+            path = download_update(info, on_progress=progress)
+        except Exception as e:                      # noqa: BLE001
+            return {"ok": False, "error": str(e)}
+
+        try:
+            install_update(path)
+        except Exception as e:                      # noqa: BLE001
+            return {"ok": False, "error": str(e)}
+
+        # Setup cannot replace a running exe, so leave. A moment first, so the
+        # front end can say what is happening before the window goes.
+        def bye():
+            time.sleep(1.2)
+            os._exit(0)
+
+        threading.Thread(target=bye, daemon=True).start()
+        return {"ok": True, "version": info.get("latest")}
 
     def open_url(self, url):
         """
