@@ -901,6 +901,52 @@ def centre_on_screen(w, h):
     return sx + max(0, (sw - w) // 2), sy + max(0, (sh - h) // 2)
 
 
+# Smallest window worth restoring. Below this the interface is unusable, and a
+# size this small never comes from the sizing code - viewer_geometry floors at
+# 720x520 - so it can only be a bogus event.
+MIN_W, MIN_H = 480, 360
+# Windows reports (-32000, -32000) for a minimised window. Any coordinate near
+# that is the minimise sentinel, not a position.
+MINIMISED = -30000
+
+
+def screen_rects():
+    """Every display as (x, y, w, h). Coordinates can be negative."""
+    try:
+        return [(getattr(s, "x", 0), getattr(s, "y", 0), s.width, s.height)
+                for s in webview.screens] or [(0, 0, 1920, 1080)]
+    except Exception:                               # noqa: BLE001
+        return [(0, 0, 1920, 1080)]
+
+
+def geometry_is_sane(x, y, w, h):
+    """
+    Would a window at this rect actually be visible?
+
+    Two ways it would not be. A minimised window reports (-32000, -32000), and
+    restoring that puts the window in the taskbar and nowhere on screen. And a
+    rect can be perfectly valid for a display that is no longer attached - this
+    machine stacks a second monitor at y = -1440, so "negative is off-screen"
+    is wrong here and the test has to be intersection with a real display.
+
+    Requires a decent corner to be on-screen rather than a single pixel, or a
+    window can be restored with only its shadow showing.
+    """
+    if x is None or y is None:
+        return False
+    if x <= MINIMISED or y <= MINIMISED:
+        return False
+    if w < MIN_W or h < MIN_H:
+        return False
+    need = 120
+    for sx, sy, sw, sh in screen_rects():
+        over_x = min(x + w, sx + sw) - max(x, sx)
+        over_y = min(y + h, sy + sh) - max(y, sy)
+        if over_x >= min(need, w) and over_y >= min(need, h):
+            return True
+    return False
+
+
 def viewer_geometry(path):
     """
     Size the viewer to the image, capped to the screen.
@@ -911,9 +957,15 @@ def viewer_geometry(path):
     """
     saved = load_prefs().get("viewer_geometry") or {}
     if saved.get("w") and saved.get("h"):
-        w, h = int(saved["w"]), int(saved["h"])
-        if saved.get("x") is not None and saved.get("y") is not None:
-            return int(saved["x"]), int(saved["y"]), w, h
+        w = max(MIN_W, int(saved["w"]))
+        h = max(MIN_H, int(saved["h"]))
+        x, y = saved.get("x"), saved.get("y")
+        # A remembered rect is only honoured if a window there would be visible.
+        # Restoring one that is not is the "it is in the taskbar but not on the
+        # screen" bug, and it is unrecoverable from the UI: the window cannot be
+        # dragged back from somewhere it cannot be seen.
+        if x is not None and y is not None and geometry_is_sane(x, y, w, h):
+            return int(x), int(y), w, h
         x, y = centre_on_screen(w, h)
         return x, y, w, h
 
@@ -942,12 +994,27 @@ def remember_geometry(window, key):
     losing the geometry in those cases is exactly when it is most annoying. The
     debounce keeps a drag from writing the file on every frame.
     """
-    state = {}
+    # Seeded from what is already stored, so a session that only ever resizes
+    # does not write {w, h} over a good {x, y, w, h}. That is how the file ended
+    # up with a size and no position, which then silently re-centred every
+    # window on the primary display.
+    state = dict(load_prefs().get(key) or {})
     timer = {"t": None}
 
     def flush():
-        if state.get("w") and state.get("h"):
-            save_prefs({key: dict(state)})
+        if not (state.get("w") and state.get("h")):
+            return
+        # Never persist a rect that could not be restored. Minimising fires
+        # `moved` with (-32000, -32000) and a collapsed size, and saving that
+        # is what reopened the window off-screen or 560x420. Dropping the
+        # position keeps the size, which still reopens somewhere visible.
+        if not geometry_is_sane(state.get("x"), state.get("y"),
+                                state["w"], state["h"]):
+            state.pop("x", None)
+            state.pop("y", None)
+        if state["w"] < MIN_W or state["h"] < MIN_H:
+            return
+        save_prefs({key: dict(state)})
 
     def schedule():
         if timer["t"] is not None:
@@ -957,10 +1024,15 @@ def remember_geometry(window, key):
         timer["t"].start()
 
     def on_resized(w, h):
+        # A minimise also arrives as a resize; ignore it rather than record it.
+        if int(w) < MIN_W or int(h) < MIN_H:
+            return
         state["w"], state["h"] = int(w), int(h)
         schedule()
 
     def on_moved(x, y):
+        if int(x) <= MINIMISED or int(y) <= MINIMISED:
+            return
         state["x"], state["y"] = int(x), int(y)
         schedule()
 
@@ -2096,9 +2168,12 @@ def main():
     # the page has applied it. --panel-sunken in each scale.
     bg = "#f5f4f1" if load_prefs().get("theme") == "light" else "#242322"
     saved = load_prefs().get("main_geometry") or {}
-    w = int(saved.get("w") or 1180)
-    h = int(saved.get("h") or 920)
-    if saved.get("x") is not None and saved.get("y") is not None:
+    w = max(MIN_W, int(saved.get("w") or 1180))
+    h = max(MIN_H, int(saved.get("h") or 920))
+    # Same check as the viewer: a remembered position is only used if a window
+    # there would actually be on a screen. Restoring one that is not leaves the
+    # app in the taskbar and nowhere visible, with no way back from the UI.
+    if geometry_is_sane(saved.get("x"), saved.get("y"), w, h):
         x, y = int(saved["x"]), int(saved["y"])
     else:
         x, y = centre_on_screen(w, h)

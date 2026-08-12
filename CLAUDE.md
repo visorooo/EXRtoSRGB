@@ -379,6 +379,28 @@ sizes the viewer to the image at up to 1:1 capped to the screen, and
 or resize** rather than only on `closing` — that event does not fire when a
 process is killed, which is exactly when losing the geometry is most annoying.
 
+**A remembered rect is a suggestion, not an instruction.** `geometry_is_sane()`
+gates both the read and the write, and both windows use it. Without it the app
+reopens in the taskbar and nowhere on screen, which cannot be recovered from the
+UI — a window you cannot see is a window you cannot drag back. Two sources, both
+observed:
+
+- **Minimising fires `moved(-32000, -32000)` and a collapsed `resized`.** Those
+  were persisted like any other value. That is where the `{"w": 560, "h": 420}`
+  in a real `prefs.json` came from, and why reopening landed off-screen or tiny.
+- **A rect saved for a display that is no longer attached** stays in the file.
+
+The obvious test — "negative coordinates are off-screen" — is **wrong**, and
+wrong on the machine this was reported from: it stacks a second monitor above
+the primary at `y = -1440`, so every valid position there is negative. The check
+is intersection with a real display from `screen_rects()`, requiring a corner of
+at least 120px rather than a sliver.
+
+`remember_geometry` also **seeds its state from the stored value**. It used to
+start empty each session, so a session that only ever resized wrote `{w, h}`
+over a good `{x, y, w, h}` — which is how the file ended up with a size and no
+position, silently re-centring every window afterwards.
+
 **Icons live in two places, and both are the aperture.** `app.ico` is the
 application - the aperture on its own; `exr.ico` is the `.exr` document icon -
 the same aperture with an EXR label from 32px up.
