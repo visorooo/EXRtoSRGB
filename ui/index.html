@@ -225,7 +225,14 @@
                 </select>
               </div>
               <div class="field" style="justify-content: flex-end; gap: 7px">
-                <label class="check">
+                <!-- This picks the edge-pixel convention, and the two are both
+                     legitimate: on stores true surface colour (straight alpha,
+                     what PNG's spec asks for and what a compositor wants when
+                     laying the image over a new background); off transforms the
+                     premultiplied value, which is what Nuke and After Effects
+                     write. Only antialiased edges differ. -->
+                <label class="check"
+                       title="On: straight alpha — edge pixels keep true surface colour, correct for compositing over a new background.&#10;Off: matches Nuke and After Effects exactly — the transform is applied to the premultiplied value.&#10;Only antialiased edges differ; opaque pixels are identical either way.">
                   <input autocomplete="off" type="checkbox" id="unpremult" checked />
                   <span class="box"></span>
                   <span>Un-premultiply</span>

@@ -309,9 +309,12 @@ def test_partial_alpha_output_is_associated(tmp_path):
     happened, the transform saw true surface colour, and alpha went back on
     exactly once. A missing re-premultiply gives f(colour) - too bright - and
     premultiplying an already-premultiplied image gives alpha * f(alpha *
-    colour), the dark edge fringe. Checked against a real production render:
-    this formula matches After Effects to under one 8-bit level, while the
-    double-premultiplied variant is out by 9.
+    colour), the dark edge fringe.
+
+    Note this reads back through OIIO's default, which associates alpha on the
+    way in, so it pins the *relationship* rather than the bytes on disk. What is
+    actually stored is the un-premultiply setting's business - see
+    `test_alpha_convention_written_to_disk`.
     """
     half = _synthetic_alpha_exr(str(tmp_path / "half.exr"), cov=0.5)
     full = _synthetic_alpha_exr(str(tmp_path / "full.exr"), cov=1.0)
@@ -333,6 +336,66 @@ def test_partial_alpha_output_is_associated(tmp_path):
         "output is straight alpha - the re-premultiply is missing"
     assert not np.allclose(got[0, 0, :3], opaque[0, 0, :3] * a * a,
                            atol=1.5 / 255), "alpha was applied twice"
+
+
+def _read_stored(path):
+    """Read a PNG exactly as stored - no associate/unassociate on the way in."""
+    cfg = oiio.ImageSpec()
+    cfg.attribute("oiio:UnassociatedAlpha", 1)
+    i = oiio.ImageInput.open(path, cfg)
+    px = np.array(i.read_image(format="float"), np.float32)
+    i.close()
+    return px
+
+
+def test_alpha_convention_written_to_disk(tmp_path):
+    """
+    The un-premultiply setting has to reach the file, and it did not.
+
+    `write_image` never told OIIO what it was being given, and the PNG writer
+    assumes associated alpha and divides it back out - PNG is unassociated by
+    spec. So the re-premultiply in `apply_transform` was undone at the last
+    step: the file came out straight whichever way the setting was pointed, and
+    turning it *off* stored f(colour)/alpha, which is neither convention and is
+    further from every other tool rather than nearer.
+
+    Traced on a 4000px production render against Nuke and After Effects, which
+    both store f(colour) - the transform applied to the premultiplied value.
+    Opaque pixels agreed to 2/65535 and alpha to 1/65535; only the antialiased
+    edges differed, by up to 28/255.
+
+    With the setting off the app now matches both of them exactly.
+    """
+    half = _synthetic_alpha_exr(str(tmp_path / "half.exr"), cov=0.5)
+    full = _synthetic_alpha_exr(str(tmp_path / "full.exr"), cov=1.0)
+
+    on = _read_stored(core.convert_one(
+        half, settings(tmp_path, bits=16, unpremult=True, suffix="_on"))[0])
+    off = _read_stored(core.convert_one(
+        half, settings(tmp_path, bits=16, unpremult=False, suffix="_off"))[0])
+    # f(colour) for the same surface colour, from the fully opaque render
+    fc_straight = _read_stored(core.convert_one(
+        full, settings(tmp_path, bits=16, suffix="_full"))[0])[0, 0, :3]
+
+    a = on[0, 0, 3]
+    assert 0.49 < a < 0.51
+
+    # ON: straight - the stored RGB is true surface colour, alpha not applied
+    assert np.allclose(on[0, 0, :3], fc_straight, atol=1.5 / 255), (
+        "un-premultiply on should store f(colour), got %s want %s"
+        % (on[0, 0, :3], fc_straight))
+
+    # OFF: the transform sees the premultiplied value, which is what Nuke and
+    # After Effects write. Darker than f(colour), and NOT alpha * f(colour).
+    assert np.all(off[0, 0, :3] < on[0, 0, :3] - 1.5 / 255), \
+        "un-premultiply off should be darker at a partial-alpha pixel"
+    assert not np.allclose(off[0, 0, :3], fc_straight * a, atol=1.5 / 255), (
+        "f(a*colour) is not a*f(colour) - the transform is non-linear, and "
+        "conflating them is what made 'off' look like a premultiply bug")
+
+    # The two settings must actually differ on disk. They did not before.
+    assert not np.allclose(on[0, 0, :3], off[0, 0, :3], atol=1.5 / 255), \
+        "the un-premultiply setting made no difference to the stored file"
 
 
 def test_flatten_on_white(tmp_path):

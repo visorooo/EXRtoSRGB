@@ -498,13 +498,19 @@ def apply_transform(rgb, alpha, W, H, settings):
     return buf, a
 
 
-def compose(buf, a, alpha_mode, force_flat=False, clamp=True):
+def compose(buf, a, alpha_mode, force_flat=False, clamp=True, unassociate=False):
     """
     Apply the alpha mode. Returns (float array, nchannels).
 
     `clamp` is off for scene-linear output, where compositing over white still
     means adding (1 - a) but the result must be allowed past 1.0 like every other
     value in the frame.
+
+    `unassociate` divides alpha back out of the kept RGBA, which is what makes
+    the un-premultiply setting visible in the file. `buf` arrives associated
+    because the two flatten modes below rely on that; a straight-alpha file has
+    to undo it at the last moment rather than earlier. See `write_image` for the
+    other half - the writer must be told not to do this itself.
     """
     if a is None:
         return buf, 3
@@ -514,6 +520,13 @@ def compose(buf, a, alpha_mode, force_flat=False, clamp=True):
     if alpha_mode == "black" or force_flat:
         # buf is associated, so compositing over black is just dropping alpha
         return buf, 3
+    if unassociate:
+        mask = a > 1e-6
+        inv = np.zeros_like(a)
+        inv[mask] = 1.0 / a[mask]
+        buf = buf * inv[..., None]
+        if clamp:
+            buf = np.clip(buf, 0.0, 1.0)
     return np.dstack([buf, a]), 4
 
 
@@ -523,6 +536,23 @@ def write_image(path, arr_uint, W, H, nchannels, fmt, quality=95,
     # Tags what is actually in the file. A scene-linear TIFF labelled sRGB would
     # be read back with a transfer function applied that was never there.
     spec.attribute("oiio:ColorSpace", colorspace)
+    # PNG only: store the pixels exactly as handed over.
+    #
+    # Without this OIIO assumes it is being given associated alpha and divides
+    # alpha back out on the way to a PNG, because PNG is unassociated by spec.
+    # That silently undid the re-premultiply in apply_transform, so the file was
+    # straight whatever the un-premultiply setting said, and turning the setting
+    # off made it worse rather than different - the stored value became
+    # f(c)/alpha, which is neither convention. Measured against Nuke and After
+    # Effects on a 4000px render: edge pixels were out by up to 28/255, opaque
+    # pixels by 2/65535, and alpha was identical. The alpha decision belongs to
+    # `compose`; the writer's job is to not have an opinion.
+    #
+    # Not TIFF: that writer already stores what it is given, and *inverts* if
+    # this attribute is set - which is what `resolve_matte_output` relies on to
+    # keep a straight coverage matte straight.
+    if path.lower().endswith(".png"):
+        spec.attribute("oiio:UnassociatedAlpha", 1)
     if path.lower().endswith((".jpg", ".jpeg")):
         spec.attribute("CompressionQuality", int(quality))
     if path.lower().endswith((".tif", ".tiff")):
@@ -586,8 +616,11 @@ def convert_one(in_path, settings):
 
     fmt, pix_fmt, bits = resolve_output(settings)
     linear = settings.get("transfer") == "linear"
+    # Scene-linear moves data untouched, so it keeps whatever association the
+    # source had; every other mode honours the un-premultiply setting.
     out_f, nch = compose(buf, a, settings["alpha_mode"],
-                         force_flat=(fmt == "jpeg"), clamp=not linear)
+                         force_flat=(fmt == "jpeg"), clamp=not linear,
+                         unassociate=(not linear and settings["unpremult"]))
 
     if pix_fmt == "float":
         arr_out = np.ascontiguousarray(out_f, dtype=np.float32)

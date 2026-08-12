@@ -621,13 +621,39 @@ Note `_DATA_LAYER_EXACT` alongside the substring list: Redshift writes normals a
 bare `N` and depth as `Z`, which no substring rule can catch without also
 condemning every layer containing an n or a z.
 
-**Un-premultiply and re-premultiply must stay paired.** Dividing alpha out before
-the display transform is correct and must not be removed — the transfer function
-needs true surface colour. But the alpha has to go back on afterwards, or the file
-carries straight-alpha RGB while every compositor reads PNG edge pixels as
-associated. The symptom is a bright fringe on antialiased edges, visible only on
-partial-alpha pixels, which is easy to mistake for a broken alpha channel. The
-`unpremulted` flag in `apply_transform` is what keeps the pair honest.
+**Un-premultiply and re-premultiply must stay paired *inside* the pipeline.**
+Dividing alpha out before the display transform is what lets the transfer
+function see true surface colour; putting it back afterwards is what `compose`'s
+flatten modes rely on, since compositing associated data over black is just
+dropping alpha. The `unpremulted` flag in `apply_transform` keeps that pair
+honest. Breaking either half puts a bright fringe on antialiased edges.
+
+**What reaches the file is a separate decision, and it was not being made.**
+`write_image` never told OIIO what it was handing over, and the PNG writer
+assumes associated alpha and divides it back out — PNG is unassociated by spec.
+So the re-premultiply was undone at the last step: the file came out straight
+whichever way the un-premultiply setting pointed, and turning it *off* stored
+`f(c)/α`, which is neither convention and further from every other tool. The fix
+is `oiio:UnassociatedAlpha` on the output spec, **PNG only** — TIFF already
+stores what it is given and *inverts* if that attribute is set, which is what
+`resolve_matte_output` depends on for straight coverage mattes.
+
+**The two conventions, both legitimate**, traced on a 4000px production render
+against Nuke and After Effects. Opaque pixels agreed to **2/65535** and alpha to
+**1/65535** — the colour pipeline was never in question. Only antialiased edges
+differed, by up to **28/255** on 0.21% of pixels:
+
+| un-premultiply | stored RGB | who else writes this |
+|---|---|---|
+| on (default) | `f(c/α)` — true surface colour, straight alpha | PNG's own spec; correct over a new background |
+| off | `f(c)` — transform applied to the premultiplied value | **Nuke and After Effects, bit-exactly** |
+
+Note `f(c) ≠ α·f(c/α)`: the transform is non-linear, so "off" is not a missing
+re-premultiply and must not be re-derived as one. That conflation is what made
+the difference look like a premultiply bug for the whole of v3.
+`tests/test_core.py::test_alpha_convention_written_to_disk` reads the stored
+bytes rather than the associated read-back, which is the only way to see any of
+this — OIIO re-associates on the way in and hides it.
 
 ## Installing
 

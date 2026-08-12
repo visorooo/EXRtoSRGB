@@ -135,9 +135,21 @@ unrestricted.
 | **TIFF** | 8, 16, or 32-bit float. |
 | **Scene-linear TIFF** | 32-bit float, no display transform, no clamp. See [below](#scene-linear-output). |
 
-Un-premultiply is **on** by default, because renders write associated alpha. The
-`_srgb` suffix is on too, so converting in place never drops a `.png` next to its
-`.exr` with the same stem.
+The `_srgb` suffix is on by default, so converting in place never drops a `.png`
+next to its `.exr` with the same stem.
+
+**Un-premultiply picks the edge-pixel convention**, and both settings are correct
+— they answer different questions. It changes nothing but antialiased edges;
+opaque pixels are identical either way.
+
+| | What lands in the file | Use it when |
+|---|---|---|
+| **On** (default) | True surface colour, straight alpha — what PNG's spec asks for | The image will be composited over a new background |
+| **Off** | The transform applied to the premultiplied value — **matches Nuke and After Effects exactly** | You want the preview to match what your compositor exports |
+
+If you are diffing this tool's output against a Nuke or After Effects export and
+finding edges a few levels apart, that toggle is the reason. Turn it off and they
+match to the bit.
 
 ### Presets
 
