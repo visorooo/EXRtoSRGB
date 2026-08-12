@@ -432,7 +432,13 @@ def convert_cli(path, fmt="png", bits=16, transfer="display", layer=None):
         "bits": int(bits),
         "alpha_mode": "keep",
         "layer": layer,
-        "unpremult": True,
+        # Must track the converter window's default, which is the Nuke/After
+        # Effects edge convention. This is the third route to the same pixels -
+        # the Explorer verbs and the viewer's Convert button both land here -
+        # and a right-click convert quietly disagreeing with the same settings
+        # in the window is exactly the kind of drift nobody would think to look
+        # for. See the alpha note in CLAUDE.md.
+        "unpremult": False,
         "transfer": transfer,
         "out_dir": None,
         # The layer goes in the name, or exporting the same EXR twice from two

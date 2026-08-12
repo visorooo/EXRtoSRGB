@@ -216,7 +216,11 @@
                   <span>Convert every layer, one file each</span>
                 </label>
               </div>
-              <div class="field">
+              <!-- Two columns, because the entries name the tools they match
+                   and at one column they truncated to "Keep alpha — matc...",
+                   which says nothing. The suffix checkbox moved down beside
+                   the other checkbox rather than sitting in the leftover. -->
+              <div class="field span2">
                 <label class="lbl" for="alpha">Alpha</label>
                 <!-- The two "keep" entries differ only on antialiased edges,
                      and both are correct - they answer different questions.
@@ -234,7 +238,10 @@
                   <option value="white">Flatten on white</option>
                 </select>
               </div>
-              <div class="field" style="justify-content: flex-end; gap: 7px">
+              <!-- Sits with the other checkbox rather than in the leftover
+                   half of the Alpha row, where it hung at the bottom of the
+                   cell with empty space above it. -->
+              <div class="field span2">
                 <label class="check">
                   <input autocomplete="off" type="checkbox" id="suffix" />
                   <span class="box"></span>

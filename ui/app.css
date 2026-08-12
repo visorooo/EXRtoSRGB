@@ -591,6 +591,14 @@ button.ghost:hover:not(:disabled) {
   grid-column: span 2;
 }
 
+/*
+ * Note `.field` is a column, so `justify-content: flex-end` on one pushes its
+ * content to the *bottom* of the cell rather than the right. That is what left
+ * "Add _srgb" hanging under an empty half-row once the un-premultiply checkbox
+ * it used to sit beside moved into the Alpha dropdown. Checkboxes that are not
+ * paired with a control now get their own full-width row instead.
+ */
+
 label.lbl {
   font-size: 11px;
   color: var(--ink-faint);
