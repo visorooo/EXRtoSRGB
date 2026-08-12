@@ -532,8 +532,13 @@
             never ran. This button is how you tell the difference.
           -->
           <div class="sheet-foot">
+            <!-- Buttons, not anchors: the UI is a file:// page, so a link with
+                 target="_blank" opens nothing. The shell has to be asked from
+                 Python, through open_url's allowlist. -->
             <span class="sheet-ver">
-              EXR → sRGB <span id="about-version">—</span>
+              EXR → sRGB <span id="about-version">—</span> · by
+              <button class="linkish" id="visor-link" type="button"
+                      title="github.com/visorooo">VISOR</button>
             </span>
             <button class="ghost" id="check-update" type="button">
               Check for updates

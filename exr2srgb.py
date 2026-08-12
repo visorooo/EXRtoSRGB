@@ -245,6 +245,8 @@ def focus_existing_instance():
 
 RELEASES_API = "https://api.github.com/repos/visorooo/EXRtoSRGB/releases/latest"
 RELEASES_PAGE = "https://github.com/visorooo/EXRtoSRGB/releases/latest"
+REPO_URL = "https://github.com/visorooo/EXRtoSRGB"
+VISOR_GITHUB = "https://github.com/visorooo"
 
 
 def _version_tuple(text):
@@ -1598,7 +1600,11 @@ class Api:
         came back from the update check.
         """
         url = str(url or "")
-        if not url.startswith("https://github.com/visorooo/EXRtoSRGB"):
+        # An allowlist, and deliberately not a bare prefix on the account: a
+        # prefix match on ".../visorooo" would also accept ".../visorooo-evil",
+        # so the profile is compared exactly and only the repo gets a prefix
+        # (it needs one, for /releases/tag/vX).
+        if not (url == VISOR_GITHUB or url.startswith(REPO_URL)):
             return False
         try:
             import webbrowser

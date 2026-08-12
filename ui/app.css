@@ -1592,6 +1592,23 @@ input[type='range']:active::-webkit-slider-thumb {
   color: var(--ink-faint);
 }
 
+/* A button that has to read as a link, because it cannot be an anchor - see
+   the note in the markup. */
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-soft);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.linkish:hover {
+  color: var(--accent);
+}
+
 /* The update button, when there is one. Accented rather than `primary`, which
    is the Convert button's weight and dwarfs a footer row. */
 .ghost.accent {
