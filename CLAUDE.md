@@ -717,6 +717,22 @@ drifts. `--unregister` runs from `[UninstallRun]` *before* the exe is deleted -
 afterwards there is nothing left to run. Neither is elevated, so both land in the
 right hive.
 
+**Never edit a source file through PowerShell `Get-Content | Set-Content`.**
+PowerShell 5.1's `Get-Content` reads a BOM-less file as **ANSI (cp1252)**, so
+every UTF-8 character is mis-decoded and written straight back corrupted - and
+`Set-Content -Encoding utf8` then adds a BOM, which makes the *next* such edit
+look clean. Bumping `VERSION` that way turned `EXR → sRGB` into `EXR â†' sRGB`
+in the window title, the `·` in five right-click menu labels, and eleven other
+strings, and it shipped in 3.2.1 and 3.2.2 before anyone saw the title bar.
+Repair is `text.encode('cp1252').decode('utf-8')`, once - the second pass reads
+the BOM and is a no-op. Use the editing tools, which do not re-encode.
+
+**`APP_NAME` is the window title, `FRIENDLY_NAME` is what the registry shows.**
+They are different strings on purpose - the title has the arrow, the registry
+name is plain ASCII because Settings and the "Open with" chooser read it back.
+Defining a second `APP_NAME` for the registration shadowed the first and quietly
+renamed the app in the title bar and taskbar.
+
 **Beware testing registry writes from a sandboxed shell.** The Bash tool and
 PowerShell here see *different* HKCU views: writes made through one are invisible
 to the other. That produced a long false trail - the association appearing not to
