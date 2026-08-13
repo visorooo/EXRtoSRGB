@@ -1386,6 +1386,19 @@ input[type='range']:active::-webkit-slider-thumb {
   color: var(--ink-faint);
 }
 
+/* Channel-coded values, same tokens as the viewer's readout. The number
+   carries the colour rather than an extra R/G/B letter - the rows are already
+   dense, and a tinted number reads as its channel without three more glyphs
+   per triplet. */
+.probe-line .ch-r { color: var(--chan-r); }
+.probe-line .ch-g { color: var(--chan-g); }
+.probe-line .ch-b { color: var(--chan-b); }
+
+/* Linear values lag the cursor by one bridge round-trip. Dimming them while
+   they are still the previous pixel's is the honest signal; the alternative is
+   presenting a stale number as current. */
+#probe.waiting .ch { opacity: 0.55; }
+
 .val {
   position: relative;
   padding: 0 3px;

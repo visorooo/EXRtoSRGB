@@ -250,8 +250,52 @@ function setPreview(uri) {
     return;
   }
   const img = new Image();
+  // Keep the probe's pixel copy in step with what is on screen, or the instant
+  // readings come off the previous settings. See sampleRendered.
+  img.onload = () => drawProbeCanvas(img);
   img.src = uri;
   box.appendChild(img);
+}
+
+/*
+ * A pixel copy of the preview, so the readout can track the cursor.
+ *
+ * Same trade as the viewer: the display values, hex and swatch are already in
+ * the page, so they need not wait for Python. They come off the *preview*,
+ * which is a thumbnail, so they are a resampled neighbourhood rather than the
+ * exact source pixel - Python still answers with the true one and overwrites.
+ */
+const probeCanvas = document.createElement('canvas');
+let probeCtx = null;
+
+function drawProbeCanvas(img) {
+  if (!img.naturalWidth) return;
+  probeCanvas.width = img.naturalWidth;
+  probeCanvas.height = img.naturalHeight;
+  probeCtx = probeCanvas.getContext('2d', { willReadFrequently: true });
+  probeCtx.drawImage(img, 0, 0);
+}
+
+function sampleRendered(uv) {
+  if (!probeCtx) return null;
+  const w = probeCanvas.width;
+  const h = probeCanvas.height;
+  const x = Math.min(w - 1, Math.max(0, Math.floor(uv[0] * w)));
+  const y = Math.min(h - 1, Math.max(0, Math.floor(uv[1] * h)));
+  let d;
+  try {
+    d = probeCtx.getImageData(x, y, 1, 1).data;
+  } catch (err) {
+    return null;
+  }
+  const hex = '#' + [d[0], d[1], d[2]]
+    .map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const out = { dr: d[0], dg: d[1], db: d[2], hex };
+  if (probe.fullW) {
+    out.x = Math.min(probe.fullW - 1, Math.floor(uv[0] * probe.fullW));
+    out.y = Math.min(probe.fullH - 1, Math.floor(uv[1] * probe.fullH));
+  }
+  return out;
 }
 
 function setPreviewLoading() {
@@ -296,6 +340,9 @@ async function renderPreview() {
     setPreview(r.uri);
     $('preview-layer').textContent = r.layer === '' ? 'R,G,B' : r.layer;
     $('preview-dims').textContent = `${r.full_width} × ${r.full_height}`;
+    // What a canvas sample needs to report a source pixel coordinate.
+    probe.fullW = r.full_width;
+    probe.fullH = r.full_height;
     $('preview-note').textContent = r.note || '';
     syncFrames(r);
   } catch (err) {
@@ -449,7 +496,14 @@ const viewer = { exposure: 0, gamma: 1, channel: 'rgb' };
  * locked  - a reading was taken and must stop following the cursor.
  * hex     - whatever the swatch is currently showing, for the copy.
  */
-const probe = { picking: false, locked: false, hex: null };
+// `shown` is the merged reading: display values arrive instantly from the
+// preview pixels, linear ones a round-trip later, and both are drawn together.
+// `fullW/fullH` are the source dimensions, so a canvas sample can report the
+// pixel coordinate rather than waiting for Python to say what it was.
+const probe = {
+  picking: false, locked: false, hex: null,
+  shown: null, fullW: 0, fullH: 0,
+};
 
 function fmtStops(v) {
   return (v > 0 ? '+' : '') + v.toFixed(1);
@@ -506,16 +560,27 @@ function wireProbe() {
   const swatch = $('pv-swatch');
   let probeTimer = null;
 
-  const paint = (p) => {
-    const a = p.a === null || p.a === undefined ? null : p.a;
-    renderProbeValues($('probe'), p, a);
-    if (!p.hex) return;
-    probe.hex = p.hex;
-    $('pv-hex').textContent = p.hex;
+  /*
+   * `partial` marks a canvas sample: it carries the display values but no
+   * linear ones, so it merges over the previous reading rather than replacing
+   * it, and the linear numbers are dimmed until the exact answer lands.
+   * Showing the previous pixel's linear values as current is the one thing a
+   * probe must not do.
+   */
+  const paint = (p, partial = false) => {
+    probe.shown = partial && probe.shown
+      ? { ...probe.shown, ...p, stale: true }
+      : { ...p, stale: false };
+    const s = probe.shown;
+    const a = s.a === null || s.a === undefined ? null : s.a;
+    renderProbeValues($('probe'), s, a);
+    if (!s.hex) return;
+    probe.hex = s.hex;
+    $('pv-hex').textContent = s.hex;
     swatch.hidden = false;
     // alpha kept on the chip, so a soft edge does not read as a solid colour
     const al = a === null ? 1 : Math.min(1, Math.max(0, a));
-    swatch.style.setProperty('--swatch', `rgb(${p.dr} ${p.dg} ${p.db} / ${al})`);
+    swatch.style.setProperty('--swatch', `rgb(${s.dr} ${s.dg} ${s.db} / ${al})`);
   };
 
   const at = (e) => {
@@ -531,19 +596,49 @@ function wireProbe() {
     window.pywebview.api.probe(state.selected, u, v, settings(),
                                viewer.exposure, viewer.gamma);
 
+  /*
+   * One request in flight, always for the newest position.
+   *
+   * The old code debounced 40ms and then awaited, so a moving cursor queued a
+   * chain of stale requests behind the current one. Coalescing keeps the exact
+   * reading one round-trip behind the cursor rather than N.
+   */
+  let busy = false;
+  let pending = null;
+
+  const requestExact = (uv) => {
+    pending = uv;
+    if (busy) return;
+    busy = true;
+    (async () => {
+      while (pending && !probe.locked) {
+        const [u, v] = pending;
+        pending = null;
+        try {
+          const p = await read(u, v);
+          if (p && p.r !== undefined && !probe.locked) paint(p);
+        } catch (err) {
+          break;
+        }
+      }
+      busy = false;
+    })();
+  };
+
   box.addEventListener('mousemove', (e) => {
     if (crypto.mode === 'crypto' || probe.locked) return;
     const uv = at(e);
     if (!uv) return;
-    clearTimeout(probeTimer);
-    probeTimer = setTimeout(async () => {
-      const p = await read(uv[0], uv[1]);
-      if (p && p.r !== undefined && !probe.locked) paint(p);
-    }, 40);
+    // Instant: swatch, hex and display values straight off the preview pixels.
+    const quick = sampleRendered(uv);
+    if (quick) paint(quick, true);
+    requestExact(uv);
   });
 
   box.addEventListener('mouseleave', () => {
     if (probe.locked) return;
+    probe.shown = null;
+    $('probe').classList.remove('waiting');
     $('probe').textContent = 'Hover the image for pixel values';
     $('pv-hex').textContent = '';
     swatch.hidden = true;
@@ -632,9 +727,17 @@ async function copyWithFeedback(text, el) {
  * Shared by both the converter and, in spirit, the viewer: the values are the
  * same and so is the reason for making them clickable.
  */
+/*
+ * The readout.
+ *
+ * Values carry a channel tint rather than an extra R/G/B letter, and each is
+ * padded to a fixed width: unpadded, `4 3 3` and `189 146 104` differ by six
+ * characters, and the column reflowed as the cursor crossed the image.
+ */
 function renderProbeValues(el, p, a) {
   const f4 = (v) => v.toFixed(4);
   el.textContent = '';
+  el.classList.toggle('waiting', Boolean(p.stale));
   const row = (label, ...kids) => {
     const r = document.createElement('div');
     r.className = 'probe-line';
@@ -645,27 +748,39 @@ function renderProbeValues(el, p, a) {
     for (const k of kids) r.appendChild(k);
     el.appendChild(r);
   };
+  const chan = (node, which) => {
+    node.classList.add('ch', `ch-${which}`);
+    return node;
+  };
+  const pad = (node, w) => {
+    node.style.minWidth = `${w}ch`;
+    return node;
+  };
 
-  row('pos', copyable(`${p.x}, ${p.y}`, 'Pixel coordinate'));
-
-  const lin = [f4(p.r), f4(p.g), f4(p.b)];
-  row('linear',
-      copyable(lin[0], 'Red, linear'),
-      copyable(lin[1], 'Green, linear'),
-      copyable(lin[2], 'Blue, linear'),
-      copyable(lin.join(' '), 'All three, linear'));
-
-  if (p.dr !== undefined) {
-    const disp = [p.dr, p.dg, p.db];
-    row('display',
-        copyable(String(disp[0]), 'Red, 8-bit display'),
-        copyable(String(disp[1]), 'Green, 8-bit display'),
-        copyable(String(disp[2]), 'Blue, 8-bit display'),
-        copyable(disp.join(' '), 'All three, 8-bit display'));
+  if (p.x !== undefined) {
+    row('pos', pad(copyable(`${p.x}, ${p.y}`, 'Pixel coordinate'), 10));
   }
 
-  row('alpha', copyable(a === null ? '—' : a.toFixed(4), 'Alpha'));
-  if (p.hex) row('hex', copyable(p.hex, 'Display colour'));
+  if (p.r !== undefined) {
+    const lin = [f4(p.r), f4(p.g), f4(p.b)];
+    row('linear',
+        chan(pad(copyable(lin[0], 'Red, linear'), 6), 'r'),
+        chan(pad(copyable(lin[1], 'Green, linear'), 6), 'g'),
+        chan(pad(copyable(lin[2], 'Blue, linear'), 6), 'b'),
+        pad(copyable(lin.join(' '), 'All three, linear'), 20));
+  }
+
+  if (p.dr !== undefined) {
+    const disp = [p.dr, p.dg, p.db].map((v) => String(v).padStart(3, ' '));
+    row('display',
+        chan(pad(copyable(disp[0], 'Red, 8-bit display'), 3), 'r'),
+        chan(pad(copyable(disp[1], 'Green, 8-bit display'), 3), 'g'),
+        chan(pad(copyable(disp[2], 'Blue, 8-bit display'), 3), 'b'),
+        pad(copyable(disp.join(' '), 'All three, 8-bit display'), 11));
+  }
+
+  row('alpha', pad(copyable(a === null ? '—' : a.toFixed(4), 'Alpha'), 6));
+  if (p.hex) row('hex', pad(copyable(p.hex, 'Display colour'), 7));
 }
 
 /*
