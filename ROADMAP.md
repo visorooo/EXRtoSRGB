@@ -579,9 +579,46 @@ has, solved once for both.
 Each of these was checked against the code rather than taken at face value. Order
 is by cost of leaving it alone, not by effort.
 
-**Items 1–6 shipped in v2.1.** They are kept here with what was actually found,
-because the trace is the useful part. Items 7 and 8 were dropped by decision, not
-by cost — the reasoning below still stands if either comes back.
+**Item 0 is open.** Items 1–6 shipped in v2.1 and are kept here with what was
+actually found, because the trace is the useful part. Items 7 and 8 were dropped
+by decision rather than by cost — the reasoning below still stands if either
+comes back.
+
+### 0. Clear leaves the Cryptomatte selection behind *(bug — open)*
+
+Reported 2026-08-20. Emptying the file list with **Clear** removes the files but
+not the Cryptomatte state: the `N selected` badge beside Output settings keeps
+its last count, and the picked objects stay in `crypto.selected`.
+
+Traced, and it is a missing call rather than bad logic. `refreshCrypto()` in
+`ui/app.js` already does the right thing — it clears `crypto.selected`, hides the
+panel and drops the preview back to Output when there are no entries. Every other
+path that empties the list calls it: `removeEntry()` does, and so does the
+selection change. **The Clear button does not.**
+
+```js
+$('btn-clear').onclick = async () => {
+  await window.pywebview.api.clear();      // no refreshCrypto()
+};
+```
+
+`Api.clear()` pushes the new (empty) file list over the bridge, but nothing on
+the JS side treats that push as a reason to re-derive the Cryptomatte panel, so
+the badge is simply never rewritten — `crypto-count` is only touched when the
+object list renders.
+
+Two ways to fix it, and the second is the one worth doing:
+
+- Call `refreshCrypto()` from the Clear handler, matching `removeEntry()`.
+- Better: make the **file-list push** the single place that re-derives dependent
+  state, so any future route that empties the list cannot forget. The bug exists
+  because "the list changed" and "the panels that depend on the list" are updated
+  from two different places.
+
+Low severity — the stale selection is discarded as soon as a new file is added,
+since `refreshCrypto()` runs on selection — but it reads as the app having kept
+something it did not, which is the kind of small dishonesty that makes people
+distrust the rest of the interface.
 
 ### 1. Viewer export ignores the selected layer *(bug — do first)* — **done**
 
