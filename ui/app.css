@@ -15,18 +15,9 @@
  * ------------------------------------------------------------------------ */
 
 :root {
-  /* VISOR brand blue, straight off the logo artwork. Theme-independent on
-     purpose: this is the brand, not a UI colour, so it never varies. It is not
-     folded into --accent, which may be retuned. */
-  --visor-blue: #1f20f1;
-
   --checker-a: var(--warm-100);
   --checker-b: var(--warm-50);
   --log-bg: var(--warm-50);
-
-  /* What the titlebar mark is actually drawn in. Brand blue on the light
-     surface, where it has 7.5:1 and carries the brand properly. */
-  --brand-mark: var(--visor-blue);
 }
 
 :root[data-theme='dark'],
@@ -34,11 +25,6 @@
   --checker-a: var(--warm-800);
   --checker-b: var(--warm-850);
   --log-bg: var(--warm-950);
-
-  /* Pure white on the dark surface. The brand blue is 1.9:1 there - effectively
-     invisible - and lifting the hue enough to be legible stops reading as the
-     brand colour anyway, so the mark goes monochrome instead of approximate. */
-  --brand-mark: #ffffff;
 }
 
 @media (prefers-color-scheme: light) {
@@ -46,7 +32,6 @@
     --checker-a: var(--warm-100);
     --checker-b: var(--warm-50);
     --log-bg: var(--warm-50);
-    --brand-mark: var(--visor-blue);
   }
 }
 
@@ -108,16 +93,6 @@ textarea {
   padding: 18px 22px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--panel-sunken);
-}
-
-/* The mark sits with the wordmark, sized to the cap height of the title rather
-   than to the line box, so the two optically align. */
-.titlebar .brand {
-  width: 15px;
-  height: 15px;
-  flex: none;
-  align-self: center;
-  color: var(--brand-mark);
 }
 
 .titlebar h1 {
