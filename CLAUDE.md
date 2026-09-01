@@ -16,7 +16,7 @@ admin.
 ```
 EXRtoSRGB.exe     the build, written to the repo root so it is easy to find.
 cli.py            the scriptable entry point. imports core only, never a window.
-app.ico           VISOR mark, multi-size. wired into the spec and the window.
+app.ico           the aperture, multi-size. wired into the spec and the window.
 core.py           conversion. no UI imports. this is what the tests exercise.
 exr2srgb.py       pywebview window + the Api bridge exposed to JavaScript.
 ui/theme.css      the warm-neutral palette. colour tokens only, no layout.
@@ -38,12 +38,13 @@ itself. Both icons put brand blue on a warm-50 rounded square rather than the re
 at 16px in a taskbar, blue-on-near-black collapses into an unreadable blob
 (1.99:1 against 7.53:1 inverted).
 
-In the UI the mark is inline SVG using `currentColor`. Two tokens, deliberately
-separate: **`--visor-blue`** is the brand and never varies by theme, while
-**`--brand-mark`** is what the mark is drawn in — brand blue on light, **pure
-white on dark**. Brand blue on the dark surface is 1.9:1, and lifting the hue far
-enough to be legible stops reading as the brand colour anyway, so the mark goes
-monochrome rather than approximate.
+**The mark is no longer in the window.** It was inline SVG in the titlebar,
+drawn through a `--brand-mark` token that resolved to brand blue on light and
+pure white on dark — brand blue on the dark surface is 1.9:1, effectively
+invisible. Removed in 3.2.4 at the owner's request; the header now opens on the
+wordmark. `--brand-mark` and `--visor-blue` went with it, since nothing else
+referenced them, and `ui/visor-mark.svg` is kept for standalone use. The icons
+still carry the aperture, so the app is not unbranded — only the titlebar is.
 
 The split is the point: anything touching pixels goes in `core.py` so it can be
 tested without opening a window.
