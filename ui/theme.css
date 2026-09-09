@@ -14,10 +14,11 @@
  * HOW TO USE
  *
  *   1. Copy this file into your project and import it before your own CSS.
- *   2. Keep ONE of the two mappings at the bottom and delete the other:
+ *   2. Uncomment ONE of the two mappings at the bottom, if you use either:
  *        · Section 4 — Tailwind v4 (`@theme`)
  *        · Section 5 — shadcn/ui (`--background`, `--foreground`, …)
- *      Section 3's semantic names work on their own if you use neither.
+ *      Both ship commented out, because this app uses neither. Section 3's
+ *      semantic names work on their own if you use neither.
  *   3. Dark mode follows the OS by default. Set `data-theme="light"` or
  *      `data-theme="dark"` on <html> to override it.
  *
@@ -186,6 +187,10 @@
     --danger: var(--red-600);
     --danger-soft: var(--red-tint);
 
+    --chan-r: #b3261e;
+    --chan-g: #1e6b33;
+    --chan-b: #1f45c4;
+
     --primary: var(--warm-900);
     --primary-ink: var(--warm-50);
 
@@ -195,3 +200,108 @@
     color-scheme: light;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * 4. Tailwind v4 — uncomment to expose the palette as utilities.
+ *
+ *    Tailwind v4 builds utilities from `--color-*`, so `--color-panel` gives
+ *    you `bg-panel`, `text-panel`, `border-panel` and so on. These point at
+ *    the semantic names above rather than at the raw scale, so a utility
+ *    follows the theme instead of freezing one side of it.
+ * ------------------------------------------------------------------------ */
+
+/*
+@theme inline {
+  --color-panel: var(--panel);
+  --color-panel-sunken: var(--panel-sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+
+  --radius-sm: var(--radius-sm);
+  --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --ease-ui: var(--ease-ui);
+  --ease-out: var(--ease-out);
+}
+*/
+
+/* --------------------------------------------------------------------------
+ * 5. shadcn/ui — uncomment to drive its components from this palette.
+ *
+ *    Written against the raw scale, not the semantic names, because three of
+ *    them collide and two of those mean different things:
+ *
+ *      --primary   same idea in both, but aliasing it to itself is circular
+ *      --accent    OURS is a blue accent colour; SHADCN's is the subtle hover
+ *                  background. Aliasing them makes every hover state blue.
+ *      --radius    same meaning and same value, so it is simply left alone.
+ *
+ *    This is the current (Tailwind v4) shadcn form, where a token holds a
+ *    whole colour. If you are on the older Tailwind v3 setup, its tokens are
+ *    bare HSL triplets consumed as `hsl(var(--background))` — hex will not
+ *    work there, and each value has to be converted.
+ * ------------------------------------------------------------------------ */
+
+/*
+:root {
+  --background: var(--warm-50);
+  --foreground: var(--warm-900);
+  --card: var(--warm-0);
+  --card-foreground: var(--warm-900);
+  --popover: var(--warm-0);
+  --popover-foreground: var(--warm-900);
+  --primary: var(--warm-900);
+  --primary-foreground: var(--warm-50);
+  --secondary: var(--warm-100);
+  --secondary-foreground: var(--warm-900);
+  --muted: var(--warm-100);
+  --muted-foreground: var(--warm-500);
+  --accent: var(--warm-100);
+  --accent-foreground: var(--warm-900);
+  --destructive: var(--red-600);
+  --destructive-foreground: var(--warm-0);
+  --border: var(--warm-100);
+  --input: var(--warm-200);
+  --ring: var(--blue-600);
+}
+
+.dark,
+:root[data-theme='dark'] {
+  --background: var(--warm-900);
+  --foreground: var(--warm-50);
+  --card: var(--warm-850);
+  --card-foreground: var(--warm-50);
+  --popover: var(--warm-850);
+  --popover-foreground: var(--warm-50);
+  --primary: var(--warm-50);
+  --primary-foreground: var(--warm-900);
+  --secondary: var(--warm-750);
+  --secondary-foreground: var(--warm-50);
+  --muted: var(--warm-750);
+  --muted-foreground: var(--warm-450);
+  --accent: var(--warm-750);
+  --accent-foreground: var(--warm-50);
+  --destructive: var(--red-400);
+  --destructive-foreground: var(--warm-900);
+  --border: var(--warm-750);
+  --input: var(--warm-700);
+  --ring: var(--blue-300);
+}
+*/
