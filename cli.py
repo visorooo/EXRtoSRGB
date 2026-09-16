@@ -105,10 +105,10 @@ def build_parser():
     # differ only on antialiased edges.
     p.add_argument("--alpha",
                    choices=("keep", "keep-straight", "black", "white"),
-                   default="keep",
-                   help="keep: match Nuke/After Effects (default); "
-                        "keep-straight: straight alpha, correct for "
-                        "compositing over a new background; "
+                   default="keep-straight",
+                   help="keep-straight: straight alpha, correct for "
+                        "compositing over a new background (default); "
+                        "keep: match Nuke/After Effects; "
                         "black/white: flatten")
     p.add_argument("--suffix", metavar="STR", default=None,
                    help="output suffix (default: _srgb, or _linear)")

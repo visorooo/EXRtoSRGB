@@ -1549,10 +1549,11 @@ function applyDefaults() {
   setValue($('format'), 'png');
   setValue($('bits'), '16');
   setValue($('quality'), '95');
-  // Matched to Nuke/After Effects by default: the tool exists to preview what
-  // a comp will look like, so its edges should agree with the comp. "straight"
-  // is one entry down for anything going back over a new background.
-  setValue($('alpha'), 'keep');
+  // Straight by default: true surface colour on the edges, which is what
+  // comes out clean when a render is laid over a new background in Photoshop.
+  // Matching Nuke/After Effects is one entry down, for diffing against a comp.
+  // convert_cli() and cli.py carry the same default - move all three together.
+  setValue($('alpha'), 'keep_straight');
   $('suffix').checked = true;
   $('all-layers').checked = false;
   $('outdir').value = '';

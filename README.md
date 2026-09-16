@@ -144,15 +144,16 @@ changes; opaque pixels are identical either way.
 
 | Alpha | What lands in the file | Use it when |
 |---|---|---|
-| **Keep alpha — match Nuke / After Effects** (default) | The display transform applied to the premultiplied value | You want the file to match what your compositor exports |
-| **Keep alpha — straight** | True surface colour, alpha stored alongside — what PNG's spec asks for | The image will be composited over a new background |
+| **Keep alpha — straight** (default) | True surface colour, alpha stored alongside — what PNG's spec asks for | The image will be composited over a new background, e.g. in Photoshop |
+| **Keep alpha — match Nuke / After Effects** | The display transform applied to the premultiplied value | You want the file to match what your compositor exports |
 | **Flatten on black / white** | No alpha channel; composited over that colour | You need a flat RGB deliverable |
 
 If you are diffing this tool's output against a Nuke or After Effects export and
-finding edges a few levels apart, that setting is the reason — the default now
-matches both **to the bit**, measured on a 4000px production render.
+finding edges a few levels apart, that setting is the reason — switch to
+**match Nuke / After Effects** and it matches both **to the bit**, measured on a
+4000px production render.
 
-On the CLI: `--alpha keep` (default), `keep-straight`, `black`, `white`.
+On the CLI: `--alpha keep-straight` (default), `keep`, `black`, `white`.
 
 ### Presets
 

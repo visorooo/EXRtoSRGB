@@ -29,13 +29,13 @@ def _captured(monkeypatch, **kw):
 
 def test_right_click_convert_uses_the_window_default_alpha(monkeypatch):
     """
-    `unpremult=False` is the Nuke/After Effects convention, and it is what
-    `applyDefaults` sets the Alpha dropdown to. The two have to move together.
+    `unpremult=True` is straight alpha, and it is what `applyDefaults` sets
+    the Alpha dropdown to (`keep_straight`). The two have to move together.
     """
     s = _captured(monkeypatch)
-    assert s["unpremult"] is False, (
-        "the right-click and viewer converts still use the straight-alpha "
-        "convention while the converter window defaults to the matched one")
+    assert s["unpremult"] is True, (
+        "the right-click and viewer converts still use the Nuke/After Effects "
+        "convention while the converter window defaults to straight alpha")
     assert s["alpha_mode"] == "keep"
 
 

@@ -646,8 +646,17 @@ differed, by up to **28/255** on 0.21% of pixels:
 
 | Alpha setting | `unpremult` | stored RGB | who else writes this |
 |---|---|---|---|
-| Keep — match Nuke/AE (**default**) | `False` | `f(c)` — transform applied to the premultiplied value | **Nuke and After Effects, bit-exactly** |
-| Keep — straight | `True` | `f(c/α)` — true surface colour, straight alpha | PNG's own spec; correct over a new background |
+| Keep — straight (**default**) | `True` | `f(c/α)` — true surface colour, straight alpha | PNG's own spec; correct over a new background |
+| Keep — match Nuke/AE | `False` | `f(c)` — transform applied to the premultiplied value | **Nuke and After Effects, bit-exactly** |
+
+**Straight is the default again**, at the owner's request after real
+use: laying a render with alpha over a background plate in Photoshop, the
+straight file's edges came out cleaner. Matching Nuke/AE stays one pick away for
+anyone diffing against a compositor export. The default lives in **three**
+places that must move together - `applyDefaults()` in `ui/app.js`,
+`convert_cli()` in `exr2srgb.py` (the right-click verbs *and* the viewer's
+Convert button) and `--alpha` in `cli.py` - and `tests/test_convert_routes.py`
+guards the first two.
 
 **The choice lives in the Alpha dropdown, not a checkbox.** It used to be a
 separate "Un-premultiply" tickbox sitting beside an Alpha select that already
