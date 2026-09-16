@@ -649,7 +649,7 @@ differed, by up to **28/255** on 0.21% of pixels:
 | Keep — straight (**default**) | `True` | `f(c/α)` — true surface colour, straight alpha | PNG's own spec; correct over a new background |
 | Keep — match Nuke/AE | `False` | `f(c)` — transform applied to the premultiplied value | **Nuke and After Effects, bit-exactly** |
 
-**Straight is the default again**, at the owner's request after real
+**Straight is the default again as of 3.2.5**, at the owner's request after real
 use: laying a render with alpha over a background plate in Photoshop, the
 straight file's edges came out cleaner. Matching Nuke/AE stays one pick away for
 anyone diffing against a compositor export. The default lives in **three**
