@@ -693,11 +693,49 @@ feature, not decoration:
 `Api.install_update` re-checks rather than trusting the blob the front end is
 holding - that result may be minutes old, and this one ends in execution.
 
-**The app must exit for setup to replace it**, so `install_update` starts the
-installer detached and a daemon thread calls `os._exit(0)` after ~1.2s - long
-enough for the UI to say what is happening before the window goes. The
-installer runs `/SILENT`, which still shows a progress window: something has to
-be on screen while the app it is replacing disappears. Per-user install, so no
+**The app must be gone before setup can replace it, and the installer is what
+guarantees that - not the app.** `install_update` starts the installer detached
+and a daemon thread calls `os._exit(0)` after ~1.2s, long enough for the UI to
+say what is happening before the window goes. That 1.2s is a courtesy, **not the
+mechanism**: it is a race, and it loses. A user updating 3.2.4 -> 3.2.5 got
+*"DeleteFile failed; code 5. Access is denied."* on `{app}\EXRtoSRGB.exe`,
+reproduced here on the first try.
+
+`installer.iss` carries **`CloseApplications=force`** for this, and it is
+load-bearing. Inno's default (`yes`) asks Restart Manager to shut the app down
+*gracefully*, which a pywebview window never answers - the setup log shows
+`RmGetList` finding both processes, then `Shutting down applications using our
+files`, then nothing, then the failed delete. `force` terminates them instead.
+`RestartApplications=no` goes with it, so setup does not bring the app back up
+behind the user's back.
+
+Two things make the race worse than it looks. The one-file build is **two
+processes** - the PyInstaller bootloader and its child - and `os._exit(0)` only
+ends the child; the bootloader then lingers deleting its 37 MB `_MEI` scratch
+directory, still holding the exe. So the window where the file is locked extends
+well past the app's own exit.
+
+Measured on the rebuilt installer: `Shutting down applications using our files.
+(forced)`, then every file installed, no error. Note the forced shutdown took
+**31s** against an app that was ignoring it completely - that is the worst case,
+and the real update path is much quicker because `install_update` has already
+exited the app by then. Setup shows its progress window throughout.
+
+**The prompt afterwards had to be gated too.** With the replace now succeeding,
+Setup reached the `--choose-default` `[Run]` entry, which is `waituntilterminated`
+and opens a window - the Default apps page on Windows 11. In a silent in-app
+update that is Settings appearing unasked, with Setup stalled behind it until it
+is dismissed. It now carries `Check: not WizardSilent`, so an interactive install
+still offers it and an update does not. Nobody hit this before 3.2.6 only because
+the install failed earlier.
+
+**The fix ships in the installer being run, so it self-heals forward**: someone
+on 3.2.5 who clicks update downloads the 3.2.6 installer, which force-closes.
+Anyone already staring at that dialog can close the app and press **Try again**,
+or take the installer from the release page.
+
+The installer runs `/SILENT`, which still shows a progress window: something has
+to be on screen while the app it is replacing disappears. Per-user install, so no
 elevation prompt.
 
 Note the updater only reaches users who **already have a build containing it**.

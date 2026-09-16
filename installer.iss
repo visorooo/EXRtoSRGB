@@ -52,6 +52,22 @@ SetupIconFile=app.ico
 UninstallDisplayIcon={app}\{#ExeName}
 UninstallDisplayName={#AppName}
 
+; The app cannot answer Restart Manager's graceful shutdown request, so
+; asking politely and then giving up is what produced "DeleteFile failed;
+; code 5. Access is denied." on the exe during an in-app update. Measured:
+; RmGetList finds both processes (the one-file build is a bootloader plus its
+; child), Setup logs "Shutting down applications using our files", nothing
+; closes, and the file replace then fails on a locked file. `force` makes
+; Setup terminate them instead of waiting on a reply that never comes.
+;
+; Do not rely on the app closing itself first. install_update() exits ~1.2s
+; after launching Setup, which is a race it loses on a fast machine - and the
+; bootloader lingers after that, deleting its 37 MB _MEI scratch directory.
+CloseApplications=force
+; Setup must not bring the app back up. The [Run] entry already offers that,
+; and it is skipifsilent - an in-app update should end quietly.
+RestartApplications=no
+
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -108,9 +124,15 @@ Filename: "{app}\{#ExeName}"; Parameters: "--register context"; \
 ; Windows' own "How do you want to open this?" dialog, so it is shown once,
 ; here, while the user is already thinking about it. Not runhidden: it IS a
 ; window. Skipped silently if .exr already resolves to us.
+; The prompt is for interactive installs only. It opens a window and waits on
+; it - on Windows 11 the Default apps page in Settings - which is right when
+; someone is running Setup and watching it, and wrong when the app is updating
+; itself. An in-app update is silent by definition: Settings would appear
+; unasked and Setup would sit there until it was dismissed. Only reachable at
+; all since 3.2.6, because before that the file replace failed first.
 Filename: "{app}\{#ExeName}"; Parameters: "--choose-default"; \
     StatusMsg: "Setting EXR to sRGB as the default for .exr..."; \
-    Flags: waituntilterminated; Tasks: assoc
+    Flags: waituntilterminated; Tasks: assoc; Check: not WizardSilent
 
 Filename: "{app}\{#ExeName}"; Description: "Launch {#AppName}"; \
     Flags: nowait postinstall skipifsilent
